@@ -5,295 +5,245 @@ import torch
 import logging
 import pickle
 import os
-from collections import Counter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global configurations for zero-day simulation
-GLOBAL_LABEL_ENCODER = None
-GLOBAL_CLASSES = None
-GLOBAL_FEATURE_COLUMNS = None
-ZERO_DAY_CONFIG = {
-    0: "DDoS",        # Client 0 missing DDoS attacks
-    1: "Reconnaissance", # Client 1 missing Reconnaissance attacks  
-    2: "Theft",       # Client 2 missing Theft attacks
-    3: "DoS",         # Client 3 missing DoS attacks
-    4: "Normal"       # Client 4 missing Normal traffic
+# Attack type mapping for Bot-IoT dataset
+ATTACK_MAPPING = {
+    'Normal': 'Normal',
+    'DDoS': 'DDoS', 
+    'DoS': 'DoS',
+    'Reconnaissance': 'Reconnaissance',
+    'Theft': 'Theft'
 }
 
-def get_or_create_global_encoder(file_path, label_col="category"):
-    """
-    Create or load a global label encoder and determine consistent feature columns.
-    """
-    global GLOBAL_LABEL_ENCODER, GLOBAL_CLASSES, GLOBAL_FEATURE_COLUMNS
-    
+# Client-specific missing attacks (as per the paper)
+CLIENT_MISSING_ATTACKS = {
+    0: 'DDoS',           # ED1: No DDoS samples
+    1: 'Reconnaissance', # ED2: No Reconnaissance samples  
+    2: 'Theft',         # ED3: No Theft samples
+    3: 'DoS',           # ED4: No DoS samples
+    4: 'Normal'         # ED5: No Normal samples
+}
+
+def load_global_encoder_and_features():
+    """Load or create global encoder and feature list"""
     encoder_file = "global_label_encoder.pkl"
-    classes_file = "global_classes.pkl"
     features_file = "global_features.pkl"
     
-    # Try to load existing encoders
-    if (os.path.exists(encoder_file) and os.path.exists(classes_file) and 
-        os.path.exists(features_file)):
-        try:
-            with open(encoder_file, 'rb') as f:
-                GLOBAL_LABEL_ENCODER = pickle.load(f)
-            with open(classes_file, 'rb') as f:
-                GLOBAL_CLASSES = pickle.load(f)
-            with open(features_file, 'rb') as f:
-                GLOBAL_FEATURE_COLUMNS = pickle.load(f)
-            logger.info(f"✅ Loaded global encoder with {len(GLOBAL_CLASSES)} classes: {GLOBAL_CLASSES}")
-            logger.info(f"✅ Loaded global features: {len(GLOBAL_FEATURE_COLUMNS)} columns")
-            return GLOBAL_LABEL_ENCODER, GLOBAL_CLASSES, GLOBAL_FEATURE_COLUMNS
-        except Exception as e:
-            logger.warning(f"Failed to load existing encoders: {e}. Creating new ones.")
+    # For Bot-IoT, we know the classes
+    global_classes = ['DDoS', 'DoS', 'Normal', 'Reconnaissance', 'Theft']
     
-    # Create new global encoder and feature set
-    logger.info("🔍 Scanning dataset to create global encoders...")
+    # Create and save encoder
+    global_encoder = LabelEncoder()
+    global_encoder.fit(global_classes)
     
-    try:
-        # Read a representative sample to determine feature columns and classes
-        sample_df = pd.read_csv(file_path, nrows=50000, low_memory=False)
-        sample_df = sample_df.dropna()
-        
-        # Get unique classes
-        unique_classes = sample_df[label_col].dropna().unique()
-        GLOBAL_CLASSES = sorted(list(unique_classes))
-        
-        # Create label encoder
-        GLOBAL_LABEL_ENCODER = LabelEncoder()
-        GLOBAL_LABEL_ENCODER.fit(GLOBAL_CLASSES)
-        
-        # Determine consistent feature columns (numeric only)
-        feature_df = sample_df.drop(columns=[label_col])
-        numeric_columns = feature_df.select_dtypes(include=[np.number]).columns.tolist()
-        
-        # Remove zero variance columns
-        valid_columns = []
-        for col in numeric_columns:
-            if sample_df[col].std() > 1e-8:
-                valid_columns.append(col)
-        
-        GLOBAL_FEATURE_COLUMNS = sorted(valid_columns)
-        
-        logger.info(f"✅ Created global encoder with {len(GLOBAL_CLASSES)} classes: {GLOBAL_CLASSES}")
-        logger.info(f"✅ Determined {len(GLOBAL_FEATURE_COLUMNS)} consistent feature columns")
-        
-        # Save encoders
-        with open(encoder_file, 'wb') as f:
-            pickle.dump(GLOBAL_LABEL_ENCODER, f)
-        with open(classes_file, 'wb') as f:
-            pickle.dump(GLOBAL_CLASSES, f)
-        with open(features_file, 'wb') as f:
-            pickle.dump(GLOBAL_FEATURE_COLUMNS, f)
-        
-    except Exception as e:
-        logger.error(f"Failed to create global encoders: {e}")
-        # Fallback
-        GLOBAL_CLASSES = ['DDoS', 'DoS', 'Normal', 'Reconnaissance', 'Theft']
-        GLOBAL_LABEL_ENCODER = LabelEncoder()
-        GLOBAL_LABEL_ENCODER.fit(GLOBAL_CLASSES)
-        GLOBAL_FEATURE_COLUMNS = [f'feature_{i}' for i in range(30)]  # Fallback features
-        logger.warning(f"Using fallback configuration")
+    with open(encoder_file, 'wb') as f:
+        pickle.dump(global_encoder, f)
     
-    return GLOBAL_LABEL_ENCODER, GLOBAL_CLASSES, GLOBAL_FEATURE_COLUMNS
+    logger.info(f"✅ Created global encoder with {len(global_classes)} classes: {global_classes}")
+    
+    # Define features (37 features as mentioned in the paper)
+    # These are the features after removing redundant ones
+    global_features = None  # Will be determined from the first data load
+    
+    return global_encoder, global_classes, global_features
 
-def load_stratified_data_sample(file_path, label_col="category", samples_per_class=5000):
+def load_full_dataset(file_path, label_col="category", sample_size_per_class=8000):
     """
-    Load a stratified sample of data ensuring all classes are represented.
+    Load the full dataset with balanced sampling across all classes
     """
-    logger.info(f"🔍 Loading stratified sample with {samples_per_class} samples per class")
+    logger.info(f"🔍 Loading full dataset with balanced sampling")
     
-    class_data = {cls: [] for cls in GLOBAL_CLASSES}
-    chunk_size = 100000
-    total_processed = 0
+    # First pass: determine all unique classes and their counts
+    class_counts = {}
+    chunk_size = 50000
     
-    try:
-        for chunk in pd.read_csv(file_path, chunksize=chunk_size, low_memory=False):
-            chunk = chunk.dropna()
-            total_processed += len(chunk)
-            
-            # Collect samples for each class
-            for class_name in GLOBAL_CLASSES:
-                if len(class_data[class_name]) >= samples_per_class:
-                    continue
+    for chunk in pd.read_csv(file_path, chunksize=chunk_size, usecols=[label_col]):
+        value_counts = chunk[label_col].value_counts()
+        for class_name, count in value_counts.items():
+            class_counts[class_name] = class_counts.get(class_name, 0) + count
+    
+    logger.info(f"Class distribution in dataset: {class_counts}")
+    
+    # Second pass: collect balanced samples
+    samples_per_class = {cls: [] for cls in class_counts.keys()}
+    samples_collected = {cls: 0 for cls in class_counts.keys()}
+    
+    # Calculate sampling probability for each class
+    sampling_probs = {}
+    for cls in class_counts.keys():
+        # Ensure we don't try to sample more than available
+        target_samples = min(sample_size_per_class, class_counts[cls])
+        sampling_probs[cls] = target_samples / class_counts[cls]
+    
+    # Read and sample data
+    all_data = []
+    for chunk in pd.read_csv(file_path, chunksize=chunk_size):
+        for class_name in samples_per_class.keys():
+            if samples_collected[class_name] < sample_size_per_class:
+                class_data = chunk[chunk[label_col] == class_name]
+                if len(class_data) > 0:
+                    # Sample based on probability
+                    n_to_sample = int(len(class_data) * sampling_probs[class_name])
+                    n_to_sample = min(n_to_sample, sample_size_per_class - samples_collected[class_name])
                     
-                class_samples = chunk[chunk[label_col] == class_name]
-                
-                if len(class_samples) > 0:
-                    needed = samples_per_class - len(class_data[class_name])
-                    to_take = min(needed, len(class_samples))
-                    
-                    sampled = class_samples.sample(n=to_take, random_state=42)
-                    class_data[class_name].append(sampled)
-                    
-                    current_total = sum(len(df) for df in class_data[class_name])
-                    logger.info(f"  {class_name}: collected {to_take}, total: {current_total}")
-            
-            # Check if we have enough data for all classes
-            if all(sum(len(df) for df in class_data[cls]) >= samples_per_class 
-                  for cls in GLOBAL_CLASSES):
-                logger.info("✅ Collected sufficient samples for all classes")
-                break
-                
-            if total_processed >= 1000000:  # Process up to 1M rows
-                logger.info(f"Processed {total_processed} rows, stopping search")
-                break
+                    if n_to_sample > 0:
+                        sampled = class_data.sample(n=min(n_to_sample, len(class_data)))
+                        samples_per_class[class_name].append(sampled)
+                        samples_collected[class_name] += len(sampled)
     
-    except Exception as e:
-        logger.error(f"Error loading stratified sample: {e}")
-        raise e
+    # Combine all samples
+    for class_name, samples in samples_per_class.items():
+        if samples:
+            all_data.extend(samples)
     
-    # Combine data for each class
-    combined_data = []
-    final_distribution = {}
+    if not all_data:
+        raise ValueError("No data collected!")
     
-    for class_name, data_list in class_data.items():
-        if data_list:
-            class_df = pd.concat(data_list, ignore_index=True)
-            # Take exactly the requested number of samples
-            if len(class_df) > samples_per_class:
-                class_df = class_df.sample(n=samples_per_class, random_state=42)
-            combined_data.append(class_df)
-            final_distribution[class_name] = len(class_df)
-            logger.info(f"✅ {class_name}: {len(class_df)} samples")
+    full_dataset = pd.concat(all_data, ignore_index=True)
+    
+    # Log final distribution
+    final_distribution = full_dataset[label_col].value_counts()
+    logger.info(f"✅ Loaded balanced dataset with distribution: {final_distribution.to_dict()}")
+    
+    return full_dataset
+
+def create_zero_day_partition(full_dataset, client_id, missing_attack, label_col="category", 
+                            train_ratio=0.8, min_samples_per_class=100):
+    """
+    Create training data for a client, excluding the missing attack type.
+    Ensure balanced representation of remaining classes.
+    """
+    # Get data excluding the missing attack
+    train_data = full_dataset[full_dataset[label_col] != missing_attack].copy()
+    
+    if len(train_data) == 0:
+        raise ValueError(f"No training data available for client {client_id} after excluding {missing_attack}")
+    
+    # Get remaining classes
+    remaining_classes = train_data[label_col].unique()
+    logger.info(f"Client {client_id} training classes: {remaining_classes}")
+    
+    # Balance the remaining classes
+    balanced_data = []
+    min_class_size = train_data[label_col].value_counts().min()
+    
+    # Sample equally from each remaining class
+    samples_per_class = max(min_samples_per_class, min(2000, min_class_size))
+    
+    for cls in remaining_classes:
+        class_data = train_data[train_data[label_col] == cls]
+        if len(class_data) >= samples_per_class:
+            sampled = class_data.sample(n=samples_per_class, random_state=42 + client_id)
         else:
-            logger.warning(f"⚠️  No samples found for {class_name}")
+            sampled = class_data
+        balanced_data.append(sampled)
     
-    if not combined_data:
-        raise ValueError("No data collected for any class")
+    balanced_train_data = pd.concat(balanced_data, ignore_index=True)
     
-    # Combine all data
-    full_dataset = pd.concat(combined_data, ignore_index=True)
-    full_dataset = full_dataset.sample(frac=1, random_state=42).reset_index(drop=True)
+    # Create test data (includes all classes including missing attack)
+    test_samples_per_class = 200  # As per the paper, test set is smaller
+    test_data_parts = []
     
-    logger.info(f"✅ Total stratified sample: {len(full_dataset)} rows")
-    
-    return full_dataset, final_distribution
-
-def create_client_partition(full_dataset, client_id, missing_attack, label_col="category"):
-    """
-    Create client-specific partition from the full dataset.
-    """
-    logger.info(f"🎯 Creating partition for client {client_id}, excluding {missing_attack}")
-    
-    # Remove the missing attack type
-    available_data = full_dataset[full_dataset[label_col] != missing_attack].copy()
-    
-    # Define client-specific sampling preferences (non-IID)
-    client_preferences = {
-        0: {'DoS': 0.6, 'Normal': 0.2, 'Reconnaissance': 0.15, 'Theft': 0.05},
-        1: {'DDoS': 0.4, 'DoS': 0.3, 'Normal': 0.25, 'Theft': 0.05},
-        2: {'DDoS': 0.45, 'DoS': 0.3, 'Normal': 0.15, 'Reconnaissance': 0.1},
-        3: {'DDoS': 0.5, 'Normal': 0.25, 'Reconnaissance': 0.2, 'Theft': 0.05},
-        4: {'DDoS': 0.4, 'DoS': 0.35, 'Reconnaissance': 0.15, 'Theft': 0.1}
-    }
-    
-    preferences = client_preferences.get(client_id, {})
-    target_total = 25000  # Target samples per client
-    
-    client_parts = []
-    
-    for class_name, proportion in preferences.items():
-        if class_name == missing_attack:
-            continue
-            
-        class_data = available_data[available_data[label_col] == class_name]
-        target_samples = int(target_total * proportion)
+    for cls in full_dataset[label_col].unique():
+        class_data = full_dataset[full_dataset[label_col] == cls]
+        # Ensure we don't overlap with training data
+        if cls != missing_attack:
+            # Remove training samples from consideration
+            train_indices = balanced_train_data.index
+            class_data = class_data[~class_data.index.isin(train_indices)]
         
-        if len(class_data) > 0:
-            actual_samples = min(target_samples, len(class_data))
-            sampled_data = class_data.sample(n=actual_samples, random_state=42 + client_id)
-            client_parts.append(sampled_data)
-            logger.info(f"  Client {client_id} - {class_name}: {len(sampled_data)} samples")
+        if len(class_data) >= test_samples_per_class:
+            sampled = class_data.sample(n=test_samples_per_class, random_state=42 + client_id + 1000)
+        else:
+            sampled = class_data
+        test_data_parts.append(sampled)
     
-    if not client_parts:
-        raise ValueError(f"No training data for client {client_id}")
+    test_data = pd.concat(test_data_parts, ignore_index=True)
     
-    # Combine client data
-    client_data = pd.concat(client_parts, ignore_index=True)
-    client_data = client_data.sample(frac=1, random_state=42 + client_id).reset_index(drop=True)
+    # Log distribution
+    train_dist = balanced_train_data[label_col].value_counts()
+    test_dist = test_data[label_col].value_counts()
+    logger.info(f"Client {client_id} train distribution: {train_dist.to_dict()}")
+    logger.info(f"Client {client_id} test distribution: {test_dist.to_dict()}")
     
-    logger.info(f"✅ Client {client_id} total training samples: {len(client_data)}")
-    
-    return client_data
+    return balanced_train_data, test_data
 
-def create_test_data(full_dataset, client_id, label_col="category"):
+def prepare_features_and_labels(data, label_col="category", global_encoder=None, feature_cols=None):
     """
-    Create test data that includes ALL classes for zero-day evaluation.
+    Prepare features and labels for training/testing
     """
-    logger.info(f"🧪 Creating test data for client {client_id}")
+    # Get labels
+    y_raw = data[label_col].values
     
-    test_parts = []
-    test_samples_per_class = 800  # Smaller test sets
+    # Select numeric features
+    if feature_cols is None:
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        feature_cols = [col for col in numeric_cols if col != label_col]
     
-    for class_name in GLOBAL_CLASSES:
-        class_data = full_dataset[full_dataset[label_col] == class_name]
-        
-        if len(class_data) > 0:
-            # Use different random seed for test data
-            actual_samples = min(test_samples_per_class, len(class_data))
-            sampled_test = class_data.sample(n=actual_samples, random_state=100 + client_id)
-            test_parts.append(sampled_test)
-            
-            missing_attack = ZERO_DAY_CONFIG.get(client_id, "DDoS")
-            zero_day_marker = " (ZERO-DAY)" if class_name == missing_attack else ""
-            logger.info(f"  Test {class_name}: {len(sampled_test)} samples{zero_day_marker}")
+    X = data[feature_cols].values
     
-    if not test_parts:
-        raise ValueError(f"No test data for client {client_id}")
+    # Handle missing values
+    X = np.nan_to_num(X, nan=0.0)
     
-    test_data = pd.concat(test_parts, ignore_index=True)
-    test_data = test_data.sample(frac=1, random_state=100 + client_id).reset_index(drop=True)
+    # Normalize features
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
     
-    logger.info(f"✅ Client {client_id} total test samples: {len(test_data)}")
+    # Encode labels
+    if global_encoder is None:
+        raise ValueError("Global encoder is required")
     
-    return test_data
+    y = global_encoder.transform(y_raw)
+    
+    # Convert to tensors
+    X_tensor = torch.tensor(X, dtype=torch.float32)
+    y_tensor = torch.tensor(y, dtype=torch.long)
+    
+    return X_tensor, y_tensor, feature_cols
 
-def load_and_partition_data(file_path, client_id, num_clients, label_col="category", chunk_size=None):
+def load_and_partition_data(file_path, client_id, num_clients, label_col="category", chunk_size=100000):
     """
-    Load and partition data implementing zero-day attack simulation for federated learning.
-    Uses consistent feature extraction to avoid dimension mismatches.
+    Load and partition data for zero-day attack detection simulation
     """
     logger.info(f"📦 Loading zero-day simulation data for client {client_id}/{num_clients}")
-
+    
     try:
-        # Get or create global encoders and feature columns
-        global_encoder, global_classes, global_features = get_or_create_global_encoder(file_path, label_col)
+        # Load global encoder
+        global_encoder, global_classes, _ = load_global_encoder_and_features()
         
-        # Get the attack type this client won't see during training
-        missing_attack = ZERO_DAY_CONFIG.get(client_id, "DDoS")
+        # Get missing attack for this client
+        missing_attack = CLIENT_MISSING_ATTACKS.get(client_id)
+        if missing_attack is None:
+            raise ValueError(f"No missing attack defined for client {client_id}")
+        
         logger.info(f"Client {client_id} will NOT see '{missing_attack}' attacks during training")
         
-        # Load stratified sample of the entire dataset
-        full_dataset, distribution = load_stratified_data_sample(file_path, label_col, samples_per_class=8000)
+        # Load full balanced dataset
+        full_dataset = load_full_dataset(file_path, label_col, sample_size_per_class=8000)
         
-        # Create client-specific training partition (excluding missing attack)
-        train_data = create_client_partition(full_dataset, client_id, missing_attack, label_col)
-        
-        # Create test data (includes ALL attack types)
-        test_data = create_test_data(full_dataset, client_id, label_col)
-        
-        # Process data with consistent features
-        X_train, y_train = process_features_and_labels(
-            train_data, label_col, global_encoder, global_classes, global_features, "training"
+        # Create zero-day partitions
+        train_data, test_data = create_zero_day_partition(
+            full_dataset, client_id, missing_attack, label_col
         )
         
-        X_test, y_test = process_features_and_labels(
-            test_data, label_col, global_encoder, global_classes, global_features, "testing"
+        # Get feature columns from the first preparation
+        X_train, y_train, feature_cols = prepare_features_and_labels(
+            train_data, label_col, global_encoder
         )
         
-        # Validate zero-day scenario
-        train_classes = set(train_data[label_col].unique())
-        test_classes = set(test_data[label_col].unique())
-        zero_day_classes = test_classes - train_classes
+        # Use same feature columns for test data
+        X_test, y_test, _ = prepare_features_and_labels(
+            test_data, label_col, global_encoder, feature_cols
+        )
         
-        logger.info(f"✅ Zero-day simulation created for client {client_id}")
-        logger.info(f"   Training classes: {sorted(train_classes)}")
-        logger.info(f"   Test classes: {sorted(test_classes)}")
-        logger.info(f"   Zero-day classes: {sorted(zero_day_classes)}")
-        logger.info(f"   Feature dimensions: Train={X_train.shape}, Test={X_test.shape}")
+        logger.info(f"✅ Client {client_id} data prepared:")
+        logger.info(f"   Training: {X_train.shape[0]} samples, {len(torch.unique(y_train))} classes")
+        logger.info(f"   Testing: {X_test.shape[0]} samples, {len(torch.unique(y_test))} classes")
+        logger.info(f"   Missing attack: {missing_attack}")
         
         return (X_train, y_train), (X_test, y_test), missing_attack
         
@@ -301,82 +251,11 @@ def load_and_partition_data(file_path, client_id, num_clients, label_col="catego
         logger.error(f"Failed to load data for client {client_id}: {str(e)}")
         raise e
 
-def process_features_and_labels(df, label_col, global_encoder, global_classes, global_features, phase):
-    """
-    Process features and labels with consistent feature columns across all clients.
-    """
-    # Separate features and labels
-    y_raw = df[label_col].values.astype(str)
-    X_df = df.drop(columns=[label_col])
-    
-    # Use only the globally consistent feature columns
-    available_features = [col for col in global_features if col in X_df.columns]
-    
-    if len(available_features) == 0:
-        logger.warning("No matching feature columns found, using all numeric columns")
-        available_features = X_df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    X = X_df[available_features].values
-    
-    logger.info(f"✅ {phase} features: {X.shape[1]} columns ({len(available_features)} available)")
-    
-    # Normalize features
-    scaler = StandardScaler()
-    X = scaler.fit_transform(X)
-    
-    # Add small amount of noise to prevent overfitting
-    noise_scale = 0.005
-    X += np.random.normal(0, noise_scale, X.shape)
-    
-    # Encode labels using global encoder
-    y_encoded = []
-    unknown_count = 0
-    
-    for label in y_raw:
-        try:
-            encoded_label = global_encoder.transform([label])[0]
-            y_encoded.append(encoded_label)
-        except ValueError:
-            logger.warning(f"Unknown class encountered: {label}")
-            encoded_label = 0  # Map to first class temporarily
-            y_encoded.append(encoded_label)
-            unknown_count += 1
-    
-    y = np.array(y_encoded)
-    
-    if unknown_count > 0:
-        logger.warning(f"Found {unknown_count} unknown class labels in {phase} data")
-    
-    # Convert to tensors
-    X_tensor = torch.tensor(X, dtype=torch.float32)
-    y_tensor = torch.tensor(y, dtype=torch.long)
-    
-    # Final validation
-    if torch.isnan(X_tensor).any() or torch.isinf(X_tensor).any():
-        logger.warning("Found NaN/Inf in features, cleaning...")
-        X_tensor = torch.nan_to_num(X_tensor, nan=0.0, posinf=1.0, neginf=-1.0)
-    
-    max_label = y_tensor.max().item()
-    min_label = y_tensor.min().item()
-    
-    if max_label >= len(global_classes) or min_label < 0:
-        logger.error(f"Invalid label range: {min_label} to {max_label}, num_classes: {len(global_classes)}")
-        raise ValueError("Label indices out of range")
-    
-    logger.info(f"✅ {phase} data processed: X={X_tensor.shape}, y={y_tensor.shape}")
-    
-    return X_tensor, y_tensor
-
 def validate_zero_day_setup(file_path, num_clients=5, label_col="category"):
     """
-    Validate the zero-day setup across all clients.
+    Validate the zero-day attack detection setup
     """
-    logger.info("🔍 Validating zero-day federated learning setup...")
-    
-    # First create global encoders
-    get_or_create_global_encoder(file_path, label_col)
-    
-    client_info = {}
+    logger.info("🔍 Validating zero-day attack detection setup...")
     
     for client_id in range(num_clients):
         try:
@@ -387,50 +266,13 @@ def validate_zero_day_setup(file_path, num_clients=5, label_col="category"):
                 label_col=label_col
             )
             
-            train_classes = torch.unique(y_train).numpy()
-            test_classes = torch.unique(y_test).numpy()
-            
-            client_info[client_id] = {
-                'train_samples': len(X_train),
-                'test_samples': len(X_test),
-                'train_features': X_train.shape[1],
-                'test_features': X_test.shape[1],
-                'train_classes': train_classes,
-                'test_classes': test_classes,
-                'missing_attack': missing_attack,
-                'zero_day_present': len(test_classes) > len(train_classes)
-            }
-            
-            logger.info(f"✅ Client {client_id}: {len(X_train)} train, {len(X_test)} test samples")
-            logger.info(f"   Features: {X_train.shape[1]} (train), {X_test.shape[1]} (test)")
-            logger.info(f"   Missing attack: {missing_attack}")
-            logger.info(f"   Zero-day scenario: {client_info[client_id]['zero_day_present']}")
+            logger.info(f"✅ Client {client_id}: Train={len(X_train)}, Test={len(X_test)}, Missing={missing_attack}")
             
         except Exception as e:
-            logger.error(f"❌ Client {client_id} validation failed: {e}")
+            logger.error(f"❌ Client {client_id} failed: {str(e)}")
     
-    # Summary
-    total_train = sum(info['train_samples'] for info in client_info.values())
-    total_test = sum(info['test_samples'] for info in client_info.values())
-    
-    logger.info(f"\n📊 ZERO-DAY SETUP VALIDATION COMPLETE")
-    logger.info(f"Total training samples: {total_train:,}")
-    logger.info(f"Total test samples: {total_test:,}")
-    logger.info(f"Zero-day scenarios: {sum(1 for info in client_info.values() if info['zero_day_present'])}/{num_clients}")
-    
-    # Check feature consistency
-    feature_counts = [info['train_features'] for info in client_info.values()]
-    if len(set(feature_counts)) == 1:
-        logger.info(f"✅ All clients have consistent feature dimensions: {feature_counts[0]}")
-    else:
-        logger.warning(f"⚠️  Inconsistent feature dimensions: {feature_counts}")
-    
-    return client_info
+    logger.info("✅ Zero-day setup validation complete")
 
 if __name__ == "__main__":
-    # Validate the zero-day setup
-    validate_zero_day_setup(
-        file_path="Bot_IoT.csv",
-        num_clients=5,
-        label_col="category"
-    )
+    # Test the zero-day setup
+    validate_zero_day_setup("Bot_IoT.csv", num_clients=5, label_col="category")
