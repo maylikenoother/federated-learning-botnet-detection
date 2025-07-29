@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pkl
+*.pt
+*.log
+*.csv
+*.zip
+*.ipynb_checkpoints/
+venv/
+fedenv/
+Bot_IoT.csv
+BoT-IoT/
+*.so
