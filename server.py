@@ -9,598 +9,447 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
+import threading
+import time
 from collections import defaultdict
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class ZeroDayResultsTracker:
-    def __init__(self, experiment_name=None):
-        self.experiment_name = experiment_name or f"zero_day_federated_experiment_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+class EnhancedResultsTracker:
+    def __init__(self, algorithm_name="FedAvg", experiment_name=None):
+        self.algorithm_name = algorithm_name
+        self.experiment_name = experiment_name or f"{algorithm_name}_experiment_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.results_dir = f"results/{self.experiment_name}"
         os.makedirs(self.results_dir, exist_ok=True)
         
-        # Initialize result storage
+        # Enhanced metrics storage for comparison
         self.training_history = []
         self.evaluation_history = []
+        self.communication_rounds = []
+        self.convergence_metrics = []
         self.client_metrics = {}
-        self.zero_day_metrics = {}
         
-        # Create CSV files
-        self.training_csv = os.path.join(self.results_dir, "training_history.csv")
-        self.evaluation_csv = os.path.join(self.results_dir, "evaluation_history.csv")
-        self.client_csv = os.path.join(self.results_dir, "client_metrics.csv")
-        self.zero_day_csv = os.path.join(self.results_dir, "zero_day_metrics.csv")
+        # Communication efficiency tracking
+        self.bytes_transmitted = 0
+        self.total_communication_time = 0
+        self.gradient_divergence = []
         
-        # Initialize CSV files with headers
+        # Initialize CSV files
         self._init_csv_files()
         
-        logger.info(f"📊 Zero-day experiment results will be saved to: {self.results_dir}")
+        logger.info(f"📊 Enhanced results tracker initialized for {algorithm_name}")
+        logger.info(f"📂 Results will be saved to: {self.results_dir}")
     
     def _init_csv_files(self):
-        """Initialize CSV files with headers"""
-        # Training history CSV
-        with open(self.training_csv, 'w', newline='') as f:
+        """Initialize enhanced CSV files for comprehensive analysis"""
+        # Communication efficiency tracking
+        self.comm_csv = os.path.join(self.results_dir, "communication_efficiency.csv")
+        with open(self.comm_csv, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['round', 'timestamp', 'train_loss', 'train_accuracy', 'num_clients', 'total_examples'])
+            writer.writerow(['round', 'bytes_transmitted', 'communication_time', 'num_participants', 
+                           'convergence_rate', 'gradient_norm', 'timestamp'])
         
-        # Evaluation history CSV
-        with open(self.evaluation_csv, 'w', newline='') as f:
+        # Convergence analysis
+        self.convergence_csv = os.path.join(self.results_dir, "convergence_analysis.csv")
+        with open(self.convergence_csv, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['round', 'timestamp', 'accuracy', 'loss', 'num_clients', 'total_examples'])
-        
-        # Client metrics CSV
-        with open(self.client_csv, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['round', 'client_id', 'phase', 'accuracy', 'loss', 'num_examples', 'missing_attack', 'timestamp'])
-        
-        # Zero-day metrics CSV
-        with open(self.zero_day_csv, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                'round', 'client_id', 'missing_attack', 'zero_day_accuracy', 
-                'zero_day_fp_rate', 'zero_day_detection_rate', 'zero_day_samples', 'timestamp'
-            ])
+            writer.writerow(['round', 'loss_improvement', 'accuracy_improvement', 'convergence_rate', 
+                           'time_to_target', 'communication_rounds_to_target', 'timestamp'])
     
-    def log_training_round(self, round_num, metrics, client_metrics_list=None):
-        """Log training round results with enhanced zero-day tracking"""
+    def log_communication_round(self, round_num, bytes_sent, comm_time, participants, convergence_rate=None, gradient_norm=None):
+        """Log communication efficiency metrics"""
         timestamp = datetime.now().isoformat()
         
-        # Calculate weighted average training accuracy if available
-        train_accuracy = 0.0
-        if client_metrics_list:
-            total_samples = sum(num_examples for num_examples, _ in client_metrics_list)
-            weighted_acc = sum(num_examples * m.get('accuracy', 0.0) for num_examples, m in client_metrics_list)
-            train_accuracy = weighted_acc / total_samples if total_samples > 0 else 0.0
-        
-        record = {
-            'round': round_num,
-            'timestamp': timestamp,
-            'train_loss': metrics.get('train_loss', 0.0),
-            'train_accuracy': train_accuracy,
-            'num_clients': metrics.get('num_clients', 0),
-            'total_examples': metrics.get('total_examples', 0)
-        }
-        
-        self.training_history.append(record)
+        self.bytes_transmitted += bytes_sent
+        self.total_communication_time += comm_time
         
         # Save to CSV
-        with open(self.training_csv, 'a', newline='') as f:
+        with open(self.comm_csv, 'a', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([
-                record['round'], record['timestamp'], record['train_loss'], 
-                record['train_accuracy'], record['num_clients'], record['total_examples']
-            ])
+            writer.writerow([round_num, bytes_sent, comm_time, participants, 
+                           convergence_rate or 0.0, gradient_norm or 0.0, timestamp])
         
-        # Display results
-        print(f"\n{'='*60}")
-        print(f"🎯 TRAINING ROUND {round_num} RESULTS")
-        print(f"{'='*60}")
-        print(f"📊 Train Loss: {record['train_loss']:.6f}")
-        print(f"🎯 Train Accuracy: {record['train_accuracy']:.4f} ({record['train_accuracy']*100:.2f}%)")
-        print(f"👥 Participating Clients: {record['num_clients']}")
-        print(f"📈 Total Training Examples: {record['total_examples']}")
-        print(f"🕒 Timestamp: {timestamp}")
-        print(f"{'='*60}\n")
-    
-    def log_evaluation_round(self, round_num, metrics, client_metrics_list=None):
-        """Log evaluation round results with zero-day analysis"""
-        timestamp = datetime.now().isoformat()
-        
-        record = {
-            'round': round_num,
-            'timestamp': timestamp,
-            'accuracy': metrics.get('accuracy', 0.0),
-            'loss': metrics.get('loss', 0.0),
-            'num_clients': metrics.get('num_clients', 0),
-            'total_examples': metrics.get('total_examples', 0)
-        }
-        
-        self.evaluation_history.append(record)
-        
-        # Save to CSV
-        with open(self.evaluation_csv, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                record['round'], record['timestamp'], record['accuracy'], 
-                record['loss'], record['num_clients'], record['total_examples']
-            ])
-        
-        # Analyze zero-day performance
-        zero_day_summary = self._analyze_zero_day_performance(client_metrics_list, round_num)
-        
-        # Display results
-        print(f"\n{'='*60}")
-        print(f"📊 EVALUATION ROUND {round_num} RESULTS")
-        print(f"{'='*60}")
-        print(f"🎯 Global Accuracy: {record['accuracy']:.4f} ({record['accuracy']*100:.2f}%)")
-        print(f"📉 Global Loss: {record['loss']:.6f}")
-        print(f"👥 Participating Clients: {record['num_clients']}")
-        print(f"📈 Total Test Examples: {record['total_examples']}")
-        
-        if zero_day_summary:
-            print(f"\n🚨 ZERO-DAY ATTACK DETECTION ANALYSIS:")
-            print(f"   Average Zero-Day Accuracy: {zero_day_summary['avg_zero_day_accuracy']:.4f}")
-            print(f"   Average False Positive Rate: {zero_day_summary['avg_fp_rate']:.4f}")
-            print(f"   Clients with Zero-Day Data: {zero_day_summary['clients_with_zero_day']}")
-            print(f"   Total Zero-Day Samples: {zero_day_summary['total_zero_day_samples']}")
-        
-        print(f"🕒 Timestamp: {timestamp}")
-        print(f"{'='*60}\n")
-    
-    def log_client_metrics(self, round_num, client_metrics_list, phase):
-        """Log individual client metrics with zero-day tracking"""
-        timestamp = datetime.now().isoformat()
-        
-        print(f"\n📋 CLIENT METRICS - Round {round_num} ({phase.upper()})")
-        print("-" * 50)
-        
-        with open(self.client_csv, 'a', newline='') as f:
-            writer = csv.writer(f)
-            
-            for i, (num_examples, metrics) in enumerate(client_metrics_list):
-                accuracy = metrics.get('accuracy', 0.0)
-                loss = metrics.get('loss', 0.0)
-                missing_attack = metrics.get('missing_attack', 'Unknown')
-                client_id = metrics.get('client_id', i)
-                
-                writer.writerow([
-                    round_num, client_id, phase, accuracy, loss, 
-                    num_examples, missing_attack, timestamp
-                ])
-                
-                print(f"👤 Client {client_id}: Acc={accuracy:.4f}, Loss={loss:.6f}, "
-                      f"Examples={num_examples}, Missing={missing_attack}")
-                
-                # Log zero-day specific metrics if available
-                if phase == 'evaluation' and 'zero_day_accuracy' in metrics:
-                    zero_day_acc = metrics.get('zero_day_accuracy', 0.0)
-                    zero_day_fp = metrics.get('zero_day_fp_rate', 0.0)
-                    zero_day_dr = metrics.get('zero_day_detection_rate', 0.0)
-                    zero_day_samples = metrics.get('zero_day_samples', 0)
-                    
-                    print(f"   🚨 Zero-Day: Acc={zero_day_acc:.4f}, FP={zero_day_fp:.4f}, "
-                          f"DR={zero_day_dr:.4f}, Samples={zero_day_samples}")
-                    
-                    # Save zero-day metrics
-                    with open(self.zero_day_csv, 'a', newline='') as zd_f:
-                        zd_writer = csv.writer(zd_f)
-                        zd_writer.writerow([
-                            round_num, client_id, missing_attack, zero_day_acc,
-                            zero_day_fp, zero_day_dr, zero_day_samples, timestamp
-                        ])
-        
-        print("-" * 50)
-    
-    def _analyze_zero_day_performance(self, client_metrics_list, round_num):
-        """Analyze zero-day attack detection performance across clients"""
-        if not client_metrics_list:
-            return None
-        
-        zero_day_accuracies = []
-        fp_rates = []
-        total_zero_day_samples = 0
-        clients_with_zero_day = 0
-        
-        for num_examples, metrics in client_metrics_list:
-            if 'zero_day_accuracy' in metrics:
-                zero_day_acc = metrics.get('zero_day_accuracy', 0.0)
-                zero_day_fp = metrics.get('zero_day_fp_rate', 0.0)
-                zero_day_samples = metrics.get('zero_day_samples', 0)
-                
-                if zero_day_samples > 0:
-                    zero_day_accuracies.append(zero_day_acc)
-                    fp_rates.append(zero_day_fp)
-                    total_zero_day_samples += zero_day_samples
-                    clients_with_zero_day += 1
-        
-        if zero_day_accuracies:
-            return {
-                'avg_zero_day_accuracy': np.mean(zero_day_accuracies),
-                'avg_fp_rate': np.mean(fp_rates),
-                'total_zero_day_samples': total_zero_day_samples,
-                'clients_with_zero_day': clients_with_zero_day,
-                'round': round_num
-            }
-        
-        return None
-    
-    def save_final_summary(self):
-        """Save comprehensive final experiment summary"""
-        # Calculate summary statistics
-        if self.evaluation_history:
-            final_accuracy = self.evaluation_history[-1]['accuracy']
-            final_loss = self.evaluation_history[-1]['loss']
-            best_accuracy = max(r['accuracy'] for r in self.evaluation_history)
-            best_round = max(range(len(self.evaluation_history)), 
-                           key=lambda i: self.evaluation_history[i]['accuracy']) + 1
-        else:
-            final_accuracy = final_loss = best_accuracy = 0.0
-            best_round = 0
-        
-        # Analyze zero-day performance over time
-        zero_day_analysis = self._analyze_zero_day_trends()
-        
-        summary = {
-            'experiment_name': self.experiment_name,
-            'experiment_type': 'Zero-Day Federated Learning',
-            'total_rounds': len(self.evaluation_history),
-            'final_accuracy': final_accuracy,
-            'final_loss': final_loss,
-            'best_accuracy': best_accuracy,
-            'best_round': best_round,
-            'zero_day_analysis': zero_day_analysis,
-            'training_history': self.training_history,
-            'evaluation_history': self.evaluation_history,
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        # Save JSON summary
-        with open(os.path.join(self.results_dir, 'experiment_summary.json'), 'w') as f:
-            json.dump(summary, f, indent=2)
-        
-        # Create comprehensive plots
-        self._create_zero_day_plots()
-        
-        # Print final summary
-        self._print_final_summary(summary)
-        
-        return summary
-    
-    def _analyze_zero_day_trends(self):
-        """Analyze zero-day detection trends over rounds"""
-        try:
-            df = pd.read_csv(self.zero_day_csv)
-            if len(df) == 0:
-                return {}
-            
-            analysis = {
-                'avg_zero_day_accuracy_per_round': {},
-                'avg_fp_rate_per_round': {},
-                'total_zero_day_samples_per_round': {},
-                'clients_tested_per_round': {}
-            }
-            
-            for round_num in df['round'].unique():
-                round_data = df[df['round'] == round_num]
-                
-                # Filter out rows with zero samples
-                valid_data = round_data[round_data['zero_day_samples'] > 0]
-                
-                if len(valid_data) > 0:
-                    analysis['avg_zero_day_accuracy_per_round'][round_num] = valid_data['zero_day_accuracy'].mean()
-                    analysis['avg_fp_rate_per_round'][round_num] = valid_data['zero_day_fp_rate'].mean()
-                    analysis['total_zero_day_samples_per_round'][round_num] = valid_data['zero_day_samples'].sum()
-                    analysis['clients_tested_per_round'][round_num] = len(valid_data)
-            
-            return analysis
-        
-        except Exception as e:
-            logger.warning(f"Failed to analyze zero-day trends: {e}")
-            return {}
-    
-    def _create_zero_day_plots(self):
-        """Create comprehensive visualizations for zero-day federated learning"""
-        if not self.evaluation_history:
-            return
-        
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        fig.suptitle(f'Zero-Day Federated Learning Results - {self.experiment_name}', fontsize=16)
-        
-        rounds = [r['round'] for r in self.evaluation_history]
-        accuracies = [r['accuracy'] for r in self.evaluation_history]
-        losses = [r['loss'] for r in self.evaluation_history]
-        
-        # 1. Global Accuracy over rounds
-        axes[0, 0].plot(rounds, accuracies, 'b-o', linewidth=2, markersize=6)
-        axes[0, 0].set_title('Global Model Accuracy')
-        axes[0, 0].set_xlabel('Round')
-        axes[0, 0].set_ylabel('Accuracy')
-        axes[0, 0].grid(True, alpha=0.3)
-        axes[0, 0].set_ylim(0, 1)
-        
-        # 2. Global Loss over rounds
-        axes[0, 1].plot(rounds, losses, 'r-o', linewidth=2, markersize=6)
-        axes[0, 1].set_title('Global Model Loss')
-        axes[0, 1].set_xlabel('Round')
-        axes[0, 1].set_ylabel('Loss')
-        axes[0, 1].grid(True, alpha=0.3)
-        
-        # 3. Training vs Evaluation Accuracy
-        if self.training_history:
-            train_rounds = [r['round'] for r in self.training_history]
-            train_accuracies = [r['train_accuracy'] for r in self.training_history]
-            axes[0, 2].plot(train_rounds, train_accuracies, 'g-o', label='Training', linewidth=2)
-            axes[0, 2].plot(rounds, accuracies, 'b-o', label='Evaluation', linewidth=2)
-            axes[0, 2].set_title('Training vs Evaluation Accuracy')
-            axes[0, 2].set_xlabel('Round')
-            axes[0, 2].set_ylabel('Accuracy')
-            axes[0, 2].legend()
-            axes[0, 2].grid(True, alpha=0.3)
-        
-        # 4. Zero-Day Detection Performance
-        try:
-            zero_day_df = pd.read_csv(self.zero_day_csv)
-            if len(zero_day_df) > 0:
-                # Group by round and calculate average zero-day accuracy
-                zd_by_round = zero_day_df[zero_day_df['zero_day_samples'] > 0].groupby('round').agg({
-                    'zero_day_accuracy': 'mean',
-                    'zero_day_fp_rate': 'mean'
-                }).reset_index()
-                
-                if len(zd_by_round) > 0:
-                    axes[1, 0].plot(zd_by_round['round'], zd_by_round['zero_day_accuracy'], 
-                                  'purple', marker='s', linewidth=2, markersize=6)
-                    axes[1, 0].set_title('Zero-Day Attack Detection Accuracy')
-                    axes[1, 0].set_xlabel('Round')
-                    axes[1, 0].set_ylabel('Zero-Day Detection Accuracy')
-                    axes[1, 0].grid(True, alpha=0.3)
-                    axes[1, 0].set_ylim(0, 1)
-                    
-                    # 5. False Positive Rate
-                    axes[1, 1].plot(zd_by_round['round'], zd_by_round['zero_day_fp_rate'], 
-                                  'orange', marker='d', linewidth=2, markersize=6)
-                    axes[1, 1].set_title('Zero-Day False Positive Rate')
-                    axes[1, 1].set_xlabel('Round')
-                    axes[1, 1].set_ylabel('False Positive Rate')
-                    axes[1, 1].grid(True, alpha=0.3)
-        
-        except Exception as e:
-            logger.warning(f"Could not create zero-day plots: {e}")
-        
-        # 6. Client Performance Distribution
-        try:
-            client_df = pd.read_csv(self.client_csv)
-            eval_df = client_df[client_df['phase'] == 'evaluation']
-            if len(eval_df) > 0:
-                latest_round = eval_df['round'].max()
-                latest_data = eval_df[eval_df['round'] == latest_round]
-                
-                axes[1, 2].bar(range(len(latest_data)), latest_data['accuracy'], 
-                             alpha=0.7, color='skyblue', edgecolor='navy')
-                axes[1, 2].set_title(f'Client Accuracy Distribution (Round {latest_round})')
-                axes[1, 2].set_xlabel('Client ID')
-                axes[1, 2].set_ylabel('Accuracy')
-                axes[1, 2].set_xticks(range(len(latest_data)))
-                axes[1, 2].set_xticklabels([f"C{int(cid)}" for cid in latest_data['client_id']])
-                axes[1, 2].grid(True, alpha=0.3, axis='y')
-        
-        except Exception as e:
-            logger.warning(f"Could not create client distribution plot: {e}")
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.results_dir, 'zero_day_federated_plots.png'), 
-                   dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        logger.info(f"📈 Plots saved to: {self.results_dir}")
-    
-    def _print_final_summary(self, summary):
-        """Print comprehensive final summary for zero-day federated learning"""
-        print(f"\n{'='*80}")
-        print(f"🎉 ZERO-DAY FEDERATED LEARNING EXPERIMENT COMPLETED")
-        print(f"{'='*80}")
-        print(f"📋 Experiment: {summary['experiment_name']}")
-        print(f"🔬 Type: {summary['experiment_type']}")
-        print(f"🔄 Total Rounds: {summary['total_rounds']}")
-        print(f"🎯 Final Global Accuracy: {summary['final_accuracy']:.4f} ({summary['final_accuracy']*100:.2f}%)")
-        print(f"📉 Final Global Loss: {summary['final_loss']:.6f}")
-        print(f"🏆 Best Global Accuracy: {summary['best_accuracy']:.4f} ({summary['best_accuracy']*100:.2f}%) at Round {summary['best_round']}")
-        
-        # Zero-day specific summary
-        zero_day_analysis = summary.get('zero_day_analysis', {})
-        if zero_day_analysis:
-            print(f"\n🚨 ZERO-DAY ATTACK DETECTION SUMMARY:")
-            if 'avg_zero_day_accuracy_per_round' in zero_day_analysis:
-                final_round_zd = max(zero_day_analysis['avg_zero_day_accuracy_per_round'].keys()) if zero_day_analysis['avg_zero_day_accuracy_per_round'] else 0
-                if final_round_zd > 0:
-                    final_zd_acc = zero_day_analysis['avg_zero_day_accuracy_per_round'][final_round_zd]
-                    final_fp_rate = zero_day_analysis['avg_fp_rate_per_round'].get(final_round_zd, 0)
-                    print(f"   Final Zero-Day Detection Accuracy: {final_zd_acc:.4f} ({final_zd_acc*100:.2f}%)")
-                    print(f"   Final False Positive Rate: {final_fp_rate:.4f} ({final_fp_rate*100:.2f}%)")
-        
-        print(f"📁 Results saved to: {self.results_dir}")
-        print(f"{'='*80}\n")
+        # Display communication efficiency
+        print(f"\n📡 COMMUNICATION ROUND {round_num}")
+        print(f"Bytes Transmitted: {bytes_sent:,}")
+        print(f"Communication Time: {comm_time:.3f}s")
+        print(f"Cumulative Bytes: {self.bytes_transmitted:,}")
+        print(f"Total Comm Time: {self.total_communication_time:.3f}s")
+        if convergence_rate:
+            print(f"Convergence Rate: {convergence_rate:.6f}")
 
-# Global results tracker
-results_tracker = None
-
-def fit_config(server_round: int) -> Dict[str, Union[bool, bytes, float, int, str]]:
-    """Return training configuration dict for each round."""
-    config = {
-        "server_round": server_round,
-        "local_epochs": 2,  # Increased for better learning
-        "batch_size": 32,
-        "learning_rate": 0.0005,  # Lower learning rate for stability
-    }
-    return config
-
-def evaluate_config(server_round: int) -> Dict[str, Union[bool, bytes, float, int, str]]:
-    """Return evaluation configuration dict for each round."""
-    config = {
-        "server_round": server_round,
-    }
-    return config
-
-def fit_metrics_aggregation_fn(metrics: List[Tuple[int, Metrics]]) -> Metrics:
-    """Aggregate fit metrics (training metrics) from multiple clients."""
-    global results_tracker
-    
-    # Extract training losses and examples
-    losses = [num_examples * m.get("loss", 0.0) for num_examples, m in metrics]
-    accuracies = [num_examples * m.get("accuracy", 0.0) for num_examples, m in metrics]
-    examples = [num_examples for num_examples, _ in metrics]
-    
-    # Calculate weighted averages
-    total_examples = sum(examples)
-    if total_examples > 0:
-        avg_loss = sum(losses) / total_examples
-        avg_accuracy = sum(accuracies) / total_examples
-    else:
-        avg_loss = 0.0
-        avg_accuracy = 0.0
-    
-    aggregated_metrics = {
-        "train_loss": avg_loss,
-        "train_accuracy": avg_accuracy,
-        "num_clients": len(metrics),
-        "total_examples": total_examples
-    }
-    
-    return aggregated_metrics
-
-def evaluate_metrics_aggregation_fn(metrics: List[Tuple[int, Metrics]]) -> Metrics:
-    """Aggregate evaluation metrics from multiple clients with zero-day analysis."""
-    global results_tracker
-    
-    # Extract metrics
-    accuracies = [num_examples * m.get("accuracy", 0.0) for num_examples, m in metrics]
-    losses = [num_examples * m.get("loss", 0.0) for num_examples, m in metrics]
-    examples = [num_examples for num_examples, _ in metrics]
-    
-    # Calculate weighted averages
-    total_examples = sum(examples)
-    if total_examples > 0:
-        avg_accuracy = sum(accuracies) / total_examples
-        avg_loss = sum(losses) / total_examples
-    else:
-        avg_accuracy = 0.0
-        avg_loss = 0.0
-    
-    # Aggregate zero-day specific metrics
-    zero_day_accuracies = []
-    zero_day_fp_rates = []
-    total_zero_day_samples = 0
-    
-    for num_examples, m in metrics:
-        if 'zero_day_accuracy' in m and m.get('zero_day_samples', 0) > 0:
-            zero_day_accuracies.append(m['zero_day_accuracy'])
-            zero_day_fp_rates.append(m.get('zero_day_fp_rate', 0.0))
-            total_zero_day_samples += m.get('zero_day_samples', 0)
-    
-    aggregated_metrics = {
-        "accuracy": avg_accuracy,
-        "loss": avg_loss,
-        "num_clients": len(metrics),
-        "total_examples": total_examples
-    }
-    
-    # Add zero-day aggregated metrics
-    if zero_day_accuracies:
-        aggregated_metrics["avg_zero_day_accuracy"] = np.mean(zero_day_accuracies)
-        aggregated_metrics["avg_zero_day_fp_rate"] = np.mean(zero_day_fp_rates)
-        aggregated_metrics["total_zero_day_samples"] = total_zero_day_samples
-        aggregated_metrics["clients_with_zero_day"] = len(zero_day_accuracies)
-    
-    return aggregated_metrics
-
-class ZeroDayFedAvg(fl.server.strategy.FedAvg):
-    """Custom FedAvg strategy with zero-day attack detection tracking"""
-    
-    def __init__(self, *args, **kwargs):
+# FedProx Strategy Implementation
+class FedProxStrategy(fl.server.strategy.FedAvg):
+    """
+    FedProx implementation with proximal term to handle non-IID data
+    Based on Li et al. (2020) - Federated Optimization in Heterogeneous Networks
+    """
+    def __init__(self, mu=0.01, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.mu = mu  # Proximal term coefficient
         self.current_round = 0
+        self.global_model_params = None
+        
+        logger.info(f"🔧 FedProx Strategy initialized with μ={mu}")
     
     def aggregate_fit(self, server_round, results, failures):
-        """Aggregate training results and log zero-day metrics."""
-        global results_tracker
-        
+        """Enhanced aggregation with proximal term tracking"""
         self.current_round = server_round
         
-        # Log client training metrics
-        if results_tracker and results:
-            client_metrics = [(r.num_examples, r.metrics) for _, r in results]
-            results_tracker.log_client_metrics(server_round, client_metrics, "training")
+        # Log communication metrics
+        if hasattr(self, 'results_tracker'):
+            bytes_sent = sum(len(str(r.parameters)) * 4 for _, r in results)  # Approximate
+            comm_time = time.time() - getattr(self, '_round_start_time', time.time())
+            self.results_tracker.log_communication_round(
+                server_round, bytes_sent, comm_time, len(results)
+            )
         
-        # Call parent aggregation
+        # Standard FedAvg aggregation with proximal term consideration
         aggregated_parameters, aggregated_metrics = super().aggregate_fit(server_round, results, failures)
         
-        # Log aggregated training metrics
-        if results_tracker and aggregated_metrics:
-            client_metrics = [(r.num_examples, r.metrics) for _, r in results] if results else None
-            results_tracker.log_training_round(server_round, aggregated_metrics, client_metrics)
+        # Store global model for next round's proximal term
+        self.global_model_params = aggregated_parameters
+        
+        # Enhanced metrics for FedProx analysis
+        if aggregated_metrics:
+            aggregated_metrics['algorithm'] = 'FedProx'
+            aggregated_metrics['mu'] = self.mu
+            aggregated_metrics['proximal_term_active'] = True
         
         return aggregated_parameters, aggregated_metrics
-    
-    def aggregate_evaluate(self, server_round, results, failures):
-        """Aggregate evaluation results and log zero-day detection metrics."""
-        global results_tracker
-        
-        # Log client evaluation metrics (including zero-day)
-        if results_tracker and results:
-            client_metrics = [(r.num_examples, r.metrics) for _, r in results]
-            results_tracker.log_client_metrics(server_round, client_metrics, "evaluation")
-        
-        # Call parent aggregation
-        aggregated_loss, aggregated_metrics = super().aggregate_evaluate(server_round, results, failures)
-        
-        # Log aggregated evaluation metrics
-        if results_tracker and aggregated_metrics:
-            client_metrics = [(r.num_examples, r.metrics) for _, r in results] if results else None
-            results_tracker.log_evaluation_round(server_round, aggregated_metrics, client_metrics)
-        
-        return aggregated_loss, aggregated_metrics
 
-def main():
-    """Start the Zero-Day Federated Learning Server."""
-    global results_tracker
+# Asynchronous FL Strategy Implementation  
+class AsyncFLStrategy(fl.server.strategy.Strategy):
+    """
+    Asynchronous Federated Learning implementation
+    Based on Xie et al. (2019) - Asynchronous Federated Optimization
+    """
+    def __init__(self, min_clients=2, staleness_threshold=3):
+        self.min_clients = min_clients
+        self.staleness_threshold = staleness_threshold
+        self.global_model = None
+        self.client_updates = {}
+        self.round_timestamps = defaultdict(float)
+        self.lock = threading.Lock()
+        
+        logger.info(f"⚡ AsyncFL Strategy initialized with staleness_threshold={staleness_threshold}")
     
-    logger.info("🌸 Starting Zero-Day Federated Learning Server...")
+    def initialize_parameters(self, client_manager):
+        """Initialize global model parameters"""
+        return fl.common.ndarrays_to_parameters([])
+    
+    def configure_fit(self, server_round, parameters, client_manager):
+        """Configure clients for asynchronous training"""
+        # In async FL, clients can train whenever they're ready
+        sample_size = max(self.min_clients, int(len(client_manager.all()) * 0.6))
+        clients = client_manager.sample(num_clients=sample_size)
+        
+        config = {
+            "server_round": server_round,
+            "local_epochs": 1,
+            "learning_rate": 0.001,
+            "async_mode": True,
+            "staleness_threshold": self.staleness_threshold
+        }
+        
+        return [(client, fl.common.FitIns(parameters, config)) for client in clients]
+    
+    def aggregate_fit(self, server_round, results, failures):
+        """Asynchronous aggregation with staleness handling"""
+        current_time = time.time()
+        
+        with self.lock:
+            # Filter out stale updates
+            fresh_results = []
+            for client_id, result in enumerate(results):
+                client_key = f"client_{client_id}"
+                staleness = server_round - self.round_timestamps.get(client_key, server_round)
+                
+                if staleness <= self.staleness_threshold:
+                    fresh_results.append((client_id, result))
+                    self.round_timestamps[client_key] = server_round
+                else:
+                    logger.warning(f"Discarding stale update from {client_key} (staleness: {staleness})")
+            
+            if not fresh_results:
+                logger.warning("No fresh updates available for aggregation")
+                return self.global_model, {}
+            
+            # Weighted aggregation based on data size and staleness
+            aggregated_ndarrays = self._aggregate_async(fresh_results)
+            
+            # Update global model
+            self.global_model = fl.common.ndarrays_to_parameters(aggregated_ndarrays)
+            
+            # Enhanced metrics
+            metrics = {
+                "algorithm": "AsyncFL",
+                "fresh_updates": len(fresh_results),
+                "discarded_stale": len(results) - len(fresh_results),
+                "avg_staleness": np.mean([server_round - self.round_timestamps.get(f"client_{i}", server_round) 
+                                        for i, _ in fresh_results])
+            }
+            
+            return self.global_model, metrics
+    
+    def _aggregate_async(self, results):
+        """Perform weighted aggregation for async updates"""
+        if not results:
+            return []
+        
+        # Extract parameters and weights
+        weights_results = [(result.num_examples, fl.common.parameters_to_ndarrays(result.parameters)) 
+                          for _, result in results]
+        
+        if not weights_results:
+            return []
+        
+        # Weighted average
+        total_examples = sum(num_examples for num_examples, _ in weights_results)
+        
+        # Initialize aggregated parameters
+        aggregated_ndarrays = [
+            np.zeros_like(layer) for layer in weights_results[0][1]
+        ]
+        
+        # Weighted sum
+        for num_examples, ndarrays in weights_results:
+            weight = num_examples / total_examples
+            for i, layer in enumerate(ndarrays):
+                aggregated_ndarrays[i] += weight * layer
+        
+        return aggregated_ndarrays
+
+# Enhanced client configuration for different algorithms
+def enhanced_fit_config(server_round: int, algorithm: str = "FedAvg") -> Dict[str, Union[bool, bytes, float, int, str]]:
+    """Return algorithm-specific training configuration"""
+    base_config = {
+        "server_round": server_round,
+        "local_epochs": 1,
+        "batch_size": 64,
+        "learning_rate": 0.001,
+        "algorithm": algorithm,
+    }
+    
+    if algorithm == "FedProx":
+        base_config.update({
+            "mu": 0.01,  # Proximal term coefficient
+            "proximal_term": True,
+        })
+    elif algorithm == "AsyncFL":
+        base_config.update({
+            "async_mode": True,
+            "staleness_threshold": 3,
+        })
+    
+    return base_config
+
+# Main experiment runner
+def run_federated_experiment(algorithm="FedAvg", num_rounds=10):
+    """Run federated learning experiment with specified algorithm"""
+    logger.info(f"🚀 Starting Federated Learning Experiment: {algorithm}")
     
     # Initialize results tracker
-    results_tracker = ZeroDayResultsTracker()
+    results_tracker = EnhancedResultsTracker(algorithm_name=algorithm)
     
-    # Create strategy with zero-day tracking
-    strategy = ZeroDayFedAvg(
-        fraction_fit=0.8,  # 80% of available clients for training
-        fraction_evaluate=1.0,  # All clients for evaluation to test zero-day detection
-        min_fit_clients=2,
-        min_evaluate_clients=2,
-        min_available_clients=2,
-        evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
-        fit_metrics_aggregation_fn=fit_metrics_aggregation_fn,
-        on_fit_config_fn=fit_config,
-        on_evaluate_config_fn=evaluate_config,
-    )
+    # Select strategy based on algorithm
+    if algorithm == "FedProx":
+        strategy = FedProxStrategy(
+            mu=0.01,
+            fraction_fit=0.8,
+            fraction_evaluate=1.0,
+            min_fit_clients=2,
+            min_evaluate_clients=2,
+            min_available_clients=2,
+        )
+    elif algorithm == "AsyncFL":
+        strategy = AsyncFLStrategy(
+            min_clients=2,
+            staleness_threshold=3
+        )
+    else:  # FedAvg (baseline)
+        from server import CustomStrategy  # Use your existing strategy
+        strategy = CustomStrategy(
+            fraction_fit=0.8,
+            fraction_evaluate=1.0,
+            min_fit_clients=2,
+            min_evaluate_clients=2,
+            min_available_clients=2,
+        )
+    
+    # Attach results tracker to strategy
+    strategy.results_tracker = results_tracker
     
     try:
-        # Start server
-        logger.info("🚀 Starting server on 0.0.0.0:8080")
+        # Start server with algorithm-specific configuration
         fl.server.start_server(
             server_address="0.0.0.0:8080",
-            config=fl.server.ServerConfig(num_rounds=10),  # More rounds for better learning
+            config=fl.server.ServerConfig(num_rounds=num_rounds),
             strategy=strategy,
         )
-    except KeyboardInterrupt:
-        logger.info("Server interrupted by user")
     except Exception as e:
-        logger.error(f"Server failed: {e}")
+        logger.error(f"Experiment failed: {e}")
     finally:
-        # Save final results
-        if results_tracker:
-            results_tracker.save_final_summary()
-            logger.info("📊 Final zero-day experiment results saved successfully!")
+        # Save results and generate comparison metrics
+        results_tracker.save_final_summary()
+        generate_algorithm_comparison(algorithm, results_tracker)
+        logger.info(f"📊 {algorithm} experiment completed!")
+
+def generate_algorithm_comparison(algorithm, results_tracker):
+    """Generate comparative analysis metrics"""
+    comparison_file = f"results/comparison_{algorithm}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    
+    # Calculate key performance indicators
+    metrics = {
+        "algorithm": algorithm,
+        "total_communication_rounds": len(results_tracker.evaluation_history),
+        "total_bytes_transmitted": results_tracker.bytes_transmitted,
+        "total_communication_time": results_tracker.total_communication_time,
+        "final_accuracy": results_tracker.evaluation_history[-1]['accuracy'] if results_tracker.evaluation_history else 0.0,
+        "convergence_rate": calculate_convergence_rate(results_tracker.evaluation_history),
+        "communication_efficiency": results_tracker.bytes_transmitted / max(results_tracker.total_communication_time, 1),
+        "rounds_to_95_percent": find_rounds_to_target_accuracy(results_tracker.evaluation_history, 0.95),
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # Save comparison metrics
+    with open(comparison_file, 'w') as f:
+        json.dump(metrics, f, indent=2)
+    
+    logger.info(f"📈 Comparison metrics saved to: {comparison_file}")
+    
+    # Print summary
+    print(f"\n{'='*60}")
+    print(f"🎯 {algorithm.upper()} PERFORMANCE SUMMARY")
+    print(f"{'='*60}")
+    print(f"Final Accuracy: {metrics['final_accuracy']:.4f}")
+    print(f"Total Rounds: {metrics['total_communication_rounds']}")
+    print(f"Bytes Transmitted: {metrics['total_bytes_transmitted']:,}")
+    print(f"Communication Time: {metrics['total_communication_time']:.2f}s")
+    print(f"Rounds to 95% Accuracy: {metrics['rounds_to_95_percent']}")
+    print(f"Communication Efficiency: {metrics['communication_efficiency']:.2f} bytes/s")
+    print(f"{'='*60}\n")
+
+def calculate_convergence_rate(evaluation_history):
+    """Calculate convergence rate based on accuracy improvements"""
+    if len(evaluation_history) < 2:
+        return 0.0
+    
+    accuracies = [round_data['accuracy'] for round_data in evaluation_history]
+    improvements = [accuracies[i] - accuracies[i-1] for i in range(1, len(accuracies))]
+    
+    # Average improvement per round
+    return np.mean(improvements) if improvements else 0.0
+
+def find_rounds_to_target_accuracy(evaluation_history, target_accuracy=0.95):
+    """Find number of rounds needed to reach target accuracy"""
+    for i, round_data in enumerate(evaluation_history):
+        if round_data['accuracy'] >= target_accuracy:
+            return i + 1
+    return len(evaluation_history)  # If target not reached
 
 if __name__ == "__main__":
-    main()
+    # Run experiments for comparison
+    algorithms = ["FedAvg", "FedProx", "AsyncFL"]
+    
+    for algorithm in algorithms:
+        print(f"\n🔄 Starting {algorithm} experiment...")
+        run_federated_experiment(algorithm=algorithm, num_rounds=10)
+        print(f"✅ {algorithm} experiment completed!")
+        
+        # Brief pause between experiments
+        time.sleep(5)
+    
+    print("\n🎉 All federated learning algorithms tested!")
+    print("📊 Check the results/ directory for detailed comparisons.")
+
+
+# Enhanced client.py modifications for algorithm support
+"""
+Add this to your client.py to support different algorithms:
+
+def fit(self, parameters, config):
+    algorithm = config.get('algorithm', 'FedAvg')
+    server_round = config.get('server_round', 'unknown')
+    
+    logger.info(f"🎯 Client {self.client_id} - Training Round {server_round} with {algorithm}")
+    
+    if algorithm == "FedProx":
+        return self._fit_fedprox(parameters, config)
+    elif algorithm == "AsyncFL":
+        return self._fit_async(parameters, config)
+    else:
+        return self._fit_fedavg(parameters, config)  # Your existing implementation
+
+def _fit_fedprox(self, parameters, config):
+    # FedProx-specific training with proximal term
+    self.set_parameters(parameters)
+    
+    # Store global model for proximal term
+    global_params = [param.clone() for param in self.model.parameters()]
+    
+    self.model.train()
+    optimizer = torch.optim.Adam(self.model.parameters(), lr=config.get('learning_rate', 0.001))
+    criterion = nn.CrossEntropyLoss()
+    mu = config.get('mu', 0.01)
+    
+    total_loss = 0.0
+    correct_predictions = 0
+    total_samples = 0
+    
+    for epoch in range(config.get('local_epochs', 1)):
+        for data, target in self.train_loader:
+            data, target = data.to(self.device), target.to(self.device)
+            
+            optimizer.zero_grad()
+            output = self.model(data)
+            
+            # Standard loss
+            loss = criterion(output, target)
+            
+            # Add proximal term
+            proximal_term = 0.0
+            for param, global_param in zip(self.model.parameters(), global_params):
+                proximal_term += torch.norm(param - global_param) ** 2
+            
+            total_loss_with_prox = loss + (mu / 2) * proximal_term
+            total_loss_with_prox.backward()
+            
+            optimizer.step()
+            
+            # Track metrics
+            with torch.no_grad():
+                pred = output.argmax(dim=1)
+                correct_predictions += pred.eq(target).sum().item()
+            
+            total_loss += loss.item()
+            total_samples += data.size(0)
+    
+    avg_loss = total_loss / total_samples if total_samples > 0 else 0.0
+    accuracy = correct_predictions / total_samples if total_samples > 0 else 0.0
+    
+    return self.get_parameters({}), len(self.train_loader.dataset), {
+        "loss": float(avg_loss),
+        "accuracy": float(accuracy),
+        "algorithm": "FedProx",
+        "proximal_term": float(proximal_term),
+        "missing_attack": self.missing_attack
+    }
+
+def _fit_async(self, parameters, config):
+    # Async FL with timestamp tracking
+    start_time = time.time()
+    result = self._fit_fedavg(parameters, config)  # Use standard training
+    training_time = time.time() - start_time
+    
+    # Add async-specific metrics
+    result[2].update({
+        "algorithm": "AsyncFL",
+        "training_time": training_time,
+        "async_timestamp": time.time()
+    })
+    
+    return result
+"""
