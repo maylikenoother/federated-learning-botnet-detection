@@ -1,0 +1,77 @@
+{
+  "experiment_series_metadata": {
+    "title": "Optimising Federated Learning Algorithms for Zero-Day Botnet Attack Detection and Mitigation in IoT-Edge Environments",
+    "institution": "University of Lincoln",
+    "department": "School of Computer Science",
+    "completion_timestamp": "2025-07-30T19:31:25.954959",
+    "experiment_series_id": "20250730_192840",
+    "total_duration": "2-3 hours (estimated)"
+  },
+  "experiment_results": {
+    "successful_algorithms": [],
+    "failed_algorithms": [
+      "FedAvg",
+      "FedProx",
+      "AsyncFL"
+    ],
+    "success_rate": 0.0,
+    "total_experiments_attempted": 3
+  },
+  "research_objectives_status": {
+    "fedavg_baseline_implementation": false,
+    "fedprox_optimization_evaluation": false,
+    "asyncfl_efficiency_analysis": false,
+    "comparative_algorithm_analysis": false,
+    "zero_day_detection_evaluation": false,
+    "communication_efficiency_study": false,
+    "iot_edge_deployment_assessment": false
+  },
+  "hypothesis_testing_results": {
+    "hypothesis_1": {
+      "statement": "No optimizer reaches better rounds (R\u2080) or bytes (B\u2080) than FedAvg for F1 \u2265 95%",
+      "status": "INSUFFICIENT_DATA",
+      "evidence": "Need multiple algorithms for comparison"
+    },
+    "hypothesis_2": {
+      "statement": "At least one optimizer accomplishes strictly superior theoretical performance",
+      "status": "INSUFFICIENT_DATA",
+      "evidence": "Need multiple algorithms for validation"
+    }
+  },
+  "data_collection_summary": {
+    "zero_day_simulation": true,
+    "iot_edge_devices": 5,
+    "communication_rounds_per_algorithm": 10,
+    "dataset_used": "Bot-IoT (5% stratified sample)",
+    "missing_attack_simulation": {
+      "client_0": "DDoS attacks excluded",
+      "client_1": "Reconnaissance attacks excluded",
+      "client_2": "Theft attacks excluded",
+      "client_3": "DoS attacks excluded",
+      "client_4": "Normal traffic excluded"
+    }
+  },
+  "expected_research_contributions": {
+    "algorithmic_contributions": [
+      "First comprehensive FL comparison for IoT zero-day detection",
+      "Quantified FedAvg limitations in edge environments",
+      "Demonstrated FedProx effectiveness for non-IID IoT data",
+      "Validated AsyncFL for real-time IoT security"
+    ],
+    "practical_contributions": [
+      "Deployment guidelines for IoT security practitioners",
+      "Algorithm selection criteria for edge environments",
+      "Performance benchmarks for FL in cybersecurity"
+    ],
+    "methodological_contributions": [
+      "Zero-day simulation framework for FL evaluation",
+      "Multi-metric assessment approach for IoT FL",
+      "Edge-computing performance evaluation methodology"
+    ]
+  },
+  "next_pipeline_phases": {
+    "phase_2_visualization": "Generate publication-quality figures",
+    "phase_3_analysis": "Comprehensive statistical analysis",
+    "phase_4_dissertation": "Organize materials for thesis writing"
+  }
+}
