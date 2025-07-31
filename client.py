@@ -250,14 +250,14 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         
         logger.info(f"✅ Client {self.client_id} FedAvg training completed - Loss: {avg_loss:.4f}, Accuracy: {training_accuracy:.4f}, Time: {training_time:.2f}s")
         
-        # Return number of samples from full dataset for proper weighting
+        # 🔧 FIXED: Return only Flower-compatible metrics (no nested dicts)
         return self.get_parameters(config={}), len(self.train_loader.dataset), {
             "loss": float(avg_loss),
             "accuracy": float(training_accuracy),
             "algorithm": "FedAvg",
-            "training_time": training_time,
+            "training_time": float(training_time),
             "missing_attack": self.missing_attack,
-            "samples_used": subset_size
+            "samples_used": int(subset_size)
         }
 
     def _fit_fedprox(self, parameters, config):
@@ -367,15 +367,16 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         logger.info(f"✅ Client {self.client_id} FedProx training completed - Loss: {avg_loss:.4f}, "
                    f"Proximal: {avg_proximal:.6f}, Accuracy: {training_accuracy:.4f}, Time: {training_time:.2f}s")
         
+        # 🔧 FIXED: Return only Flower-compatible metrics (no nested dicts)
         return self.get_parameters(config={}), len(self.train_loader.dataset), {
             "loss": float(avg_loss),
             "accuracy": float(training_accuracy),
             "algorithm": "FedProx",
             "proximal_term": float(avg_proximal),
-            "mu": mu,
-            "training_time": training_time,
+            "mu": float(mu),
+            "training_time": float(training_time),
             "missing_attack": self.missing_attack,
-            "samples_used": subset_size
+            "samples_used": int(subset_size)
         }
 
     def _fit_async(self, parameters, config):
@@ -400,13 +401,13 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         # Update timestamp
         self.last_update_time = current_time
         
-        # Add async-specific metrics
+        # 🔧 FIXED: Update async-specific metrics (no nested dicts)
         result[2].update({
             "algorithm": "AsyncFL",
             "staleness_estimate": float(estimated_staleness),
             "time_since_last_update": float(time_since_last_update),
-            "async_timestamp": current_time,
-            "staleness_threshold": staleness_threshold
+            "async_timestamp": float(current_time),
+            "staleness_threshold": float(staleness_threshold)
         })
         
         logger.info(f"✅ Client {self.client_id} AsyncFL training completed - Staleness: {estimated_staleness:.2f}")
@@ -496,10 +497,11 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             accuracy = correct / total
             avg_loss = total_loss / total
             
+            # Calculate per-class accuracy (flatten to simple key-value pairs)
             per_class_accuracy = {}
             for class_id in class_targets:
                 if class_targets[class_id] > 0:
-                    per_class_accuracy[class_id] = class_predictions[class_id] / class_targets[class_id]
+                    per_class_accuracy[f"class_{class_id}_accuracy"] = class_predictions[class_id] / class_targets[class_id]
             
             zero_day_detection_rate = self._calculate_zero_day_detection(per_class_accuracy)
             
@@ -507,14 +509,20 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                         f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}, "
                         f"Zero-day detection: {zero_day_detection_rate:.4f}")
             
-            return float(avg_loss), len(self.test_loader.dataset), {
+            # 🔧 FIXED: Return only Flower-compatible metrics (flatten nested dicts)
+            metrics = {
                 "accuracy": float(accuracy),
                 "algorithm": algorithm,
                 "missing_attack": self.missing_attack,
                 "zero_day_detection_rate": float(zero_day_detection_rate),
-                "per_class_accuracy": {str(k): float(v) for k, v in per_class_accuracy.items()},
                 "total_classes_detected": len(per_class_accuracy)
             }
+            
+            # Add flattened per-class accuracies
+            for key, value in per_class_accuracy.items():
+                metrics[key] = float(value)
+            
+            return float(avg_loss), len(self.test_loader.dataset), metrics
         
         except Exception as e:
             logger.error(f"❌ Client {self.client_id} evaluation failed: {e}")

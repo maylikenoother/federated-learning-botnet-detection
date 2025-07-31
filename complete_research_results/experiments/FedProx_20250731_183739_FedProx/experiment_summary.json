@@ -1,0 +1,152 @@
+{
+  "algorithm": "FedProx",
+  "experiment_id": "FedProx_20250731_183941",
+  "total_rounds": 10,
+  "total_time": 69.08670663833618,
+  "final_accuracy": 0.6988914668729054,
+  "final_loss": 0.83652269566726,
+  "training_history": [
+    {
+      "round": 1,
+      "loss": 5.809131457742337,
+      "num_clients": 2,
+      "total_examples": 758,
+      "timestamp": "2025-07-31T18:40:20.446170"
+    },
+    {
+      "round": 2,
+      "loss": 5.229652028118746,
+      "num_clients": 2,
+      "total_examples": 758,
+      "timestamp": "2025-07-31T18:40:22.654506"
+    },
+    {
+      "round": 3,
+      "loss": 5.933098363141384,
+      "num_clients": 2,
+      "total_examples": 2287,
+      "timestamp": "2025-07-31T18:40:25.815536"
+    },
+    {
+      "round": 4,
+      "loss": 4.947164803102914,
+      "num_clients": 3,
+      "total_examples": 2666,
+      "timestamp": "2025-07-31T18:40:29.179539"
+    },
+    {
+      "round": 5,
+      "loss": 4.517299623853987,
+      "num_clients": 4,
+      "total_examples": 3045,
+      "timestamp": "2025-07-31T18:40:33.344026"
+    },
+    {
+      "round": 6,
+      "loss": 4.07401554396193,
+      "num_clients": 4,
+      "total_examples": 3045,
+      "timestamp": "2025-07-31T18:40:36.403937"
+    },
+    {
+      "round": 7,
+      "loss": 3.6257213651314752,
+      "num_clients": 4,
+      "total_examples": 3045,
+      "timestamp": "2025-07-31T18:40:39.573284"
+    },
+    {
+      "round": 8,
+      "loss": 3.7631131098053086,
+      "num_clients": 4,
+      "total_examples": 3045,
+      "timestamp": "2025-07-31T18:40:42.601562"
+    },
+    {
+      "round": 9,
+      "loss": 3.328444676894813,
+      "num_clients": 4,
+      "total_examples": 3045,
+      "timestamp": "2025-07-31T18:40:45.597947"
+    },
+    {
+      "round": 10,
+      "loss": 3.0191231865514734,
+      "num_clients": 4,
+      "total_examples": 3045,
+      "timestamp": "2025-07-31T18:40:48.597809"
+    }
+  ],
+  "evaluation_history": [
+    {
+      "round": 1,
+      "loss": 2.626379868501945,
+      "accuracy": 0.13339183852566916,
+      "num_clients": 3,
+      "timestamp": "2025-07-31T18:40:22.021216"
+    },
+    {
+      "round": 2,
+      "loss": 2.2837690443990524,
+      "accuracy": 0.15884159719175076,
+      "num_clients": 3,
+      "timestamp": "2025-07-31T18:40:24.315830"
+    },
+    {
+      "round": 3,
+      "loss": 1.740649845507982,
+      "accuracy": 0.3757713543358233,
+      "num_clients": 4,
+      "timestamp": "2025-07-31T18:40:27.538697"
+    },
+    {
+      "round": 4,
+      "loss": 1.4499406866819535,
+      "accuracy": 0.5367362722351121,
+      "num_clients": 5,
+      "timestamp": "2025-07-31T18:40:31.625444"
+    },
+    {
+      "round": 5,
+      "loss": 1.2145089765097807,
+      "accuracy": 0.5674142820314514,
+      "num_clients": 5,
+      "timestamp": "2025-07-31T18:40:35.349685"
+    },
+    {
+      "round": 6,
+      "loss": 1.0824512241119637,
+      "accuracy": 0.6063418406805878,
+      "num_clients": 5,
+      "timestamp": "2025-07-31T18:40:38.498236"
+    },
+    {
+      "round": 7,
+      "loss": 0.9953720100333501,
+      "accuracy": 0.6689868522815159,
+      "num_clients": 5,
+      "timestamp": "2025-07-31T18:40:41.596919"
+    },
+    {
+      "round": 8,
+      "loss": 0.9707222366861598,
+      "accuracy": 0.6584171178138696,
+      "num_clients": 5,
+      "timestamp": "2025-07-31T18:40:44.602817"
+    },
+    {
+      "round": 9,
+      "loss": 0.9644968327126204,
+      "accuracy": 0.6519721577726219,
+      "num_clients": 5,
+      "timestamp": "2025-07-31T18:40:47.555213"
+    },
+    {
+      "round": 10,
+      "loss": 0.83652269566726,
+      "accuracy": 0.6988914668729054,
+      "num_clients": 5,
+      "timestamp": "2025-07-31T18:40:50.680780"
+    }
+  ]
+}

@@ -101,7 +101,7 @@ class ResultsTracker:
         logger.info(f"💾 Experiment summary saved to {summary_file}")
         return summary
 
-# Custom strategy that works with all algorithms
+# Custom strategy that works with all algorithms and handles metrics properly
 class CustomStrategy(fl.server.strategy.FedAvg):
     def __init__(self, algorithm_name="FedAvg", results_tracker=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -110,9 +110,35 @@ class CustomStrategy(fl.server.strategy.FedAvg):
         self.current_round = 0
         logger.info(f"🚀 {algorithm_name} strategy initialized")
     
+    def configure_fit(self, server_round: int, parameters: Parameters, client_manager) -> List[Tuple]:
+        """Configure training for each round"""
+        config = {
+            "server_round": server_round,
+            "algorithm": self.algorithm_name,
+            "local_epochs": 1,
+            "batch_size": 16,
+            "learning_rate": 0.001,
+        }
+        
+        # Add algorithm-specific config
+        if self.algorithm_name == "FedProx":
+            config["mu"] = 0.01  # Proximal term coefficient
+        elif self.algorithm_name == "AsyncFL":
+            config["staleness_threshold"] = 3
+        
+        return super().configure_fit(server_round, parameters, client_manager)
+    
+    def configure_evaluate(self, server_round: int, parameters: Parameters, client_manager) -> List[Tuple]:
+        """Configure evaluation for each round"""
+        config = {
+            "server_round": server_round,
+            "algorithm": self.algorithm_name,
+        }
+        return super().configure_evaluate(server_round, parameters, client_manager)
+    
     def aggregate_fit(self, server_round: int, results: List[Tuple[fl.server.client_proxy.ClientProxy, FitRes]], 
                      failures: List[Union[Tuple[fl.server.client_proxy.ClientProxy, FitRes], BaseException]]) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
-        """Aggregate fit results"""
+        """Aggregate fit results with proper metrics handling"""
         self.current_round = server_round
         
         if not results:
@@ -122,57 +148,91 @@ class CustomStrategy(fl.server.strategy.FedAvg):
         # Log failures
         if failures:
             logger.warning(f"Failed clients in round {server_round}: {len(failures)}")
+            for failure in failures:
+                if isinstance(failure, tuple):
+                    logger.warning(f"Client failure: {failure}")
+                else:
+                    logger.warning(f"Exception: {failure}")
         
-        # Extract metrics from results
+        # Extract metrics from results with proper type checking
         losses = []
         accuracies = []
         examples = []
+        algorithm_specific_metrics = {}
         
         for client, fit_res in results:
             examples.append(fit_res.num_examples)
+            
             if fit_res.metrics:
-                if "loss" in fit_res.metrics:
-                    losses.append(fit_res.metrics["loss"])
-                if "accuracy" in fit_res.metrics:
-                    accuracies.append(fit_res.metrics["accuracy"])
+                # Safely extract scalar metrics
+                if "loss" in fit_res.metrics and isinstance(fit_res.metrics["loss"], (int, float)):
+                    losses.append(float(fit_res.metrics["loss"]))
+                
+                if "accuracy" in fit_res.metrics and isinstance(fit_res.metrics["accuracy"], (int, float)):
+                    accuracies.append(float(fit_res.metrics["accuracy"]))
+                
+                # Collect algorithm-specific metrics safely
+                for key, value in fit_res.metrics.items():
+                    if isinstance(value, (int, float, str, bool)) and key not in ["loss", "accuracy"]:
+                        if key not in algorithm_specific_metrics:
+                            algorithm_specific_metrics[key] = []
+                        algorithm_specific_metrics[key].append(value)
         
         # Calculate weighted averages
         total_examples = sum(examples)
-        if losses:
+        if losses and total_examples > 0:
             avg_loss = sum(l * e for l, e in zip(losses, examples)) / total_examples
         else:
             avg_loss = 0.0
+        
+        if accuracies and total_examples > 0:
+            avg_accuracy = sum(a * e for a, e in zip(accuracies, examples)) / total_examples
+        else:
+            avg_accuracy = 0.0
         
         # Log training metrics
         self.results_tracker.log_training_round(server_round, avg_loss, len(results), total_examples)
         
         # Log round info
         logger.info(f"\n{'='*60}")
-        logger.info(f"ROUND {server_round} - {self.algorithm_name}")
+        logger.info(f"TRAINING ROUND {server_round} - {self.algorithm_name}")
         logger.info(f"{'='*60}")
-        logger.info(f"Clients: {len(results)}")
+        logger.info(f"Participating clients: {len(results)}")
         logger.info(f"Total examples: {total_examples}")
-        logger.info(f"Average loss: {avg_loss:.4f}")
-        if accuracies:
-            avg_acc = sum(a * e for a, e in zip(accuracies, examples)) / total_examples
-            logger.info(f"Average accuracy: {avg_acc:.4f}")
+        logger.info(f"Average training loss: {avg_loss:.4f}")
+        if avg_accuracy > 0:
+            logger.info(f"Average training accuracy: {avg_accuracy:.4f}")
+        
+        # Log algorithm-specific metrics
+        for metric_name, values in algorithm_specific_metrics.items():
+            if all(isinstance(v, (int, float)) for v in values):
+                avg_value = sum(values) / len(values)
+                logger.info(f"Average {metric_name}: {avg_value:.4f}")
         
         # Standard FedAvg aggregation
         aggregated_parameters, aggregated_metrics = super().aggregate_fit(server_round, results, failures)
         
-        # Add algorithm-specific metrics
+        # Add safe algorithm-specific metrics to aggregated results
         if aggregated_metrics is None:
             aggregated_metrics = {}
         
-        aggregated_metrics["algorithm"] = self.algorithm_name
-        aggregated_metrics["round"] = server_round
-        aggregated_metrics["num_clients"] = len(results)
+        # Only add Flower-compatible scalar metrics
+        aggregated_metrics.update({
+            "algorithm": self.algorithm_name,
+            "round": server_round,
+            "num_clients": len(results),
+            "avg_training_loss": avg_loss,
+            "total_examples": total_examples
+        })
+        
+        if avg_accuracy > 0:
+            aggregated_metrics["avg_training_accuracy"] = avg_accuracy
         
         return aggregated_parameters, aggregated_metrics
     
     def aggregate_evaluate(self, server_round: int, results: List[Tuple[fl.server.client_proxy.ClientProxy, fl.common.EvaluateRes]],
                           failures: List[Union[Tuple[fl.server.client_proxy.ClientProxy, fl.common.EvaluateRes], BaseException]]) -> Tuple[Optional[float], Dict[str, Scalar]]:
-        """Aggregate evaluation results"""
+        """Aggregate evaluation results with proper metrics handling"""
         if not results:
             logger.warning(f"No evaluation results in round {server_round}")
             return None, {}
@@ -180,39 +240,100 @@ class CustomStrategy(fl.server.strategy.FedAvg):
         # Log failures
         if failures:
             logger.warning(f"Failed evaluations in round {server_round}: {len(failures)}")
+            for failure in failures:
+                if isinstance(failure, tuple):
+                    logger.warning(f"Evaluation failure: {failure}")
+                else:
+                    logger.warning(f"Exception: {failure}")
         
-        # Weighted average of loss and accuracy
+        # Weighted average of loss and accuracy with proper type checking
         total_loss = 0.0
         total_accuracy = 0.0
         total_examples = 0
+        zero_day_metrics = {}
+        algorithm_metrics = {}
         
         for client, eval_res in results:
-            total_loss += eval_res.loss * eval_res.num_examples
-            total_examples += eval_res.num_examples
+            # Safely handle loss (should always be a number)
+            if isinstance(eval_res.loss, (int, float)) and not (np.isnan(eval_res.loss) or np.isinf(eval_res.loss)):
+                total_loss += eval_res.loss * eval_res.num_examples
+                total_examples += eval_res.num_examples
             
-            if eval_res.metrics and "accuracy" in eval_res.metrics:
-                total_accuracy += eval_res.metrics["accuracy"] * eval_res.num_examples
+            # Process metrics safely
+            if eval_res.metrics:
+                for key, value in eval_res.metrics.items():
+                    if isinstance(value, (int, float)) and not (np.isnan(value) or np.isinf(value)):
+                        if key == "accuracy":
+                            total_accuracy += value * eval_res.num_examples
+                        elif "zero_day" in key:
+                            if key not in zero_day_metrics:
+                                zero_day_metrics[key] = []
+                            zero_day_metrics[key].append(value * eval_res.num_examples)
+                        elif key not in ["algorithm", "missing_attack"]:  # Skip non-numeric
+                            if key not in algorithm_metrics:
+                                algorithm_metrics[key] = []
+                            algorithm_metrics[key].append(value * eval_res.num_examples)
         
+        # Calculate final metrics
         avg_loss = total_loss / total_examples if total_examples > 0 else float('inf')
         avg_accuracy = total_accuracy / total_examples if total_examples > 0 else 0.0
+        
+        # Calculate zero-day detection metrics
+        avg_zero_day_metrics = {}
+        for key, values in zero_day_metrics.items():
+            if values:
+                avg_zero_day_metrics[key] = sum(values) / total_examples
+        
+        # Calculate other algorithm metrics
+        avg_algorithm_metrics = {}
+        for key, values in algorithm_metrics.items():
+            if values:
+                avg_algorithm_metrics[key] = sum(values) / total_examples
         
         # Log evaluation metrics
         self.results_tracker.log_evaluation_round(server_round, avg_loss, avg_accuracy, len(results))
         
         # Display results
-        logger.info(f"\nEVALUATION - Round {server_round}")
-        logger.info(f"Loss: {avg_loss:.4f}")
-        logger.info(f"Accuracy: {avg_accuracy:.4f}")
+        logger.info(f"\nEVALUATION ROUND {server_round} - {self.algorithm_name}")
+        logger.info(f"{'='*60}")
+        logger.info(f"Global Loss: {avg_loss:.4f}")
+        logger.info(f"Global Accuracy: {avg_accuracy:.4f}")
         logger.info(f"Clients evaluated: {len(results)}")
         
-        return avg_loss, {"accuracy": avg_accuracy, "algorithm": self.algorithm_name}
+        # Log zero-day detection metrics
+        if avg_zero_day_metrics:
+            logger.info("Zero-day Detection Metrics:")
+            for key, value in avg_zero_day_metrics.items():
+                logger.info(f"  {key}: {value:.4f}")
+        
+        # Log algorithm-specific metrics
+        if avg_algorithm_metrics:
+            logger.info(f"{self.algorithm_name} Specific Metrics:")
+            for key, value in avg_algorithm_metrics.items():
+                logger.info(f"  {key}: {value:.4f}")
+        
+        # Prepare return metrics (only Flower-compatible scalars)
+        return_metrics = {
+            "accuracy": avg_accuracy,
+            "algorithm": self.algorithm_name,
+            "num_clients": len(results),
+            "total_examples": total_examples
+        }
+        
+        # Add zero-day metrics
+        return_metrics.update(avg_zero_day_metrics)
+        
+        # Add algorithm-specific metrics
+        return_metrics.update(avg_algorithm_metrics)
+        
+        return avg_loss, return_metrics
 
 def fit_config(server_round: int) -> Dict[str, Union[bool, bytes, float, int, str]]:
     """Return training configuration dict for each round"""
     config = {
         "server_round": server_round,
         "local_epochs": 1,
-        "batch_size": 64,
+        "batch_size": 16,
         "learning_rate": 0.001,
     }
     return config
@@ -225,7 +346,7 @@ def evaluate_config(server_round: int) -> Dict[str, Union[bool, bytes, float, in
     return config
 
 def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
-    """Get strategy based on algorithm name"""
+    """Get strategy based on algorithm name with proper configuration"""
     
     # Create results tracker
     results_tracker = ResultsTracker(algorithm)
@@ -271,9 +392,9 @@ def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
     return strategy
 
 def main():
-    """Main server function"""
+    """Main server function with enhanced error handling"""
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Federated Learning Server')
+    parser = argparse.ArgumentParser(description='Enhanced Federated Learning Server')
     parser.add_argument('--algorithm', type=str, default='FedAvg', 
                        choices=['FedAvg', 'FedProx', 'AsyncFL'],
                        help='FL algorithm to use')
@@ -286,23 +407,26 @@ def main():
     
     args = parser.parse_args()
     
-    logger.info(f"\n{'='*60}")
-    logger.info(f"🚀 STARTING FEDERATED LEARNING SERVER")
-    logger.info(f"{'='*60}")
+    logger.info(f"\n{'='*80}")
+    logger.info(f"🚀 STARTING ENHANCED FEDERATED LEARNING SERVER")
+    logger.info(f"{'='*80}")
     logger.info(f"Algorithm: {args.algorithm}")
     logger.info(f"Rounds: {args.rounds}")
     logger.info(f"Port: {args.port}")
-    logger.info(f"{'='*60}\n")
+    logger.info(f"Results Directory: {args.results_dir}")
+    logger.info(f"Enhanced Metrics Handling: ✅ Enabled")
+    logger.info(f"{'='*80}\n")
     
-    # Get strategy
+    # Get strategy with enhanced metrics handling
     strategy = get_strategy(args.algorithm)
     
     try:
-        # Start Flower server
+        # Start Flower server with enhanced configuration
         fl.server.start_server(
             server_address=f"0.0.0.0:{args.port}",
-            config=fl.server.ServerConfig(num_rounds=args.rounds,
-            round_timeout=120
+            config=fl.server.ServerConfig(
+                num_rounds=args.rounds,
+                round_timeout=180  # Increased timeout for stability
             ),
             strategy=strategy,
         )
@@ -312,19 +436,31 @@ def main():
             summary = strategy.results_tracker.save_final_summary()
             
             # Display final results
-            logger.info(f"\n{'='*60}")
+            logger.info(f"\n{'='*80}")
             logger.info(f"🏁 EXPERIMENT COMPLETED - {args.algorithm}")
-            logger.info(f"{'='*60}")
+            logger.info(f"{'='*80}")
             logger.info(f"Final Accuracy: {summary['final_accuracy']:.4f}")
             logger.info(f"Final Loss: {summary['final_loss']:.4f}")
+            logger.info(f"Total Rounds: {summary['total_rounds']}")
             logger.info(f"Total Time: {summary['total_time']:.2f} seconds")
-            logger.info(f"Results saved to: {strategy.results_tracker.results_dir}")
-            logger.info(f"{'='*60}\n")
+            logger.info(f"Results Directory: {strategy.results_tracker.results_dir}")
+            logger.info(f"✅ Enhanced metrics handling completed successfully")
+            logger.info(f"{'='*80}\n")
         
     except Exception as e:
         logger.error(f"❌ Server error: {e}")
         import traceback
+        logger.error("Full traceback:")
         logger.error(traceback.format_exc())
+        
+        # Try to save any partial results
+        if hasattr(strategy, 'results_tracker'):
+            try:
+                strategy.results_tracker.save_final_summary()
+                logger.info("💾 Partial results saved despite error")
+            except:
+                logger.error("Failed to save partial results")
+        
         raise e
 
 if __name__ == "__main__":
