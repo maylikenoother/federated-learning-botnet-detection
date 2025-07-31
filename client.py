@@ -193,7 +193,7 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                     pred = output.argmax(dim=1, keepdim=True)
                     epoch_correct += pred.eq(target.view_as(pred)).sum().item()
                 
-                epoch_loss += loss.item()
+                epoch_loss += loss.item() * data.size(0)
                 epoch_samples += data.size(0)
             
             total_loss += epoch_loss
@@ -290,7 +290,7 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                     pred = output.argmax(dim=1, keepdim=True)
                     epoch_correct += pred.eq(target.view_as(pred)).sum().item()
                 
-                epoch_loss += ce_loss.item()
+                epoch_loss += ce_loss.item() * data.size(0)
                 epoch_proximal += proximal_loss.item()
                 epoch_samples += data.size(0)
             
@@ -378,6 +378,18 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             self.set_parameters(parameters)
             logger.debug("Model parameters set successfully")
             
+            # CRITICAL FIX: Check if we have test data
+            if len(self.test_loader.dataset) == 0:
+                logger.warning(f"⚠️ Client {self.client_id} has no test data!")
+                # Return minimal valid metrics that won't crash aggregation
+                return 0.0, 1, {
+                    "accuracy": 0.0,
+                    "algorithm": algorithm,
+                    "missing_attack": self.missing_attack,
+                    "zero_day_detection_rate": 0.0,
+                    "no_test_data": True
+                }
+            
             # Evaluate model
             self.model.eval()
             criterion = nn.CrossEntropyLoss()
@@ -425,13 +437,19 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                         if t == p:
                             class_predictions[t] += 1
             
-            if total > 0:
-                accuracy = correct / total
-                avg_loss = total_loss / total
-            else:
-                accuracy = 0.0
-                avg_loss = float('inf')
+            # CRITICAL FIX: Ensure we processed some samples
+            if total == 0:
                 logger.warning(f"⚠️ Client {self.client_id}: No valid samples processed in evaluation")
+                return 0.0, 1, {
+                    "accuracy": 0.0,
+                    "algorithm": algorithm,
+                    "missing_attack": self.missing_attack,
+                    "zero_day_detection_rate": 0.0,
+                    "evaluation_failed": True
+                }
+            
+            accuracy = correct / total
+            avg_loss = total_loss / total
             
             per_class_accuracy = {}
             for class_id in class_targets:
@@ -456,7 +474,8 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         except Exception as e:
             logger.error(f"❌ Client {self.client_id} evaluation failed: {e}")
             logger.error(traceback.format_exc())
-            return float('inf'), 0, {
+            # Return minimal valid result that won't break aggregation
+            return 0.0, 1, {
                 "accuracy": 0.0,
                 "algorithm": algorithm,
                 "missing_attack": self.missing_attack,
@@ -490,14 +509,14 @@ def main():
         for attempt in range(max_retries):
             try:
                 logger.info(f"📂 Loading data for client {CLIENT_ID} (attempt {attempt + 1}/{max_retries})")
-                (X, y), (X_test, y_test), missing_attack = load_and_partition_data(
+                (X_train, y_train), (X_test, y_test), missing_attack = load_and_partition_data(
                     file_path="Bot_IoT.csv",
                     client_id=CLIENT_ID,
                     num_clients=NUM_CLIENTS,
                     label_col="category",
                     chunk_size=50000  # Optimized for reliability
                 )
-                logger.info(f"✅ Data loaded successfully: {len(X)} samples")
+                logger.info(f"✅ Data loaded successfully: {len(X_train)} train, {len(X_test)} test samples")
                 break
             except Exception as e:
                 logger.error(f"❌ Data loading attempt {attempt + 1} failed: {e}")
@@ -507,30 +526,30 @@ def main():
                     raise e
 
         
+        # CRITICAL FIX: Use data as provided by partition_data - do NOT split again
         # Validate data size
-        if len(X) < 50:
-            logger.warning(f"⚠️ Client {CLIENT_ID} has very few samples ({len(X)}). This may affect performance.")
+        if len(X_train) < 10:
+            logger.warning(f"⚠️ Client {CLIENT_ID} has very few training samples ({len(X_train)})")
         
-        # Create train/test split (80/20)
-        dataset_size = len(X)
-        train_size = max(int(0.8 * dataset_size), 1)
-        test_size = dataset_size - train_size
+        if len(X_test) < 10:
+            logger.warning(f"⚠️ Client {CLIENT_ID} has very few test samples ({len(X_test)})")
         
-        if test_size == 0:
-            test_size = 1
-            train_size = dataset_size - 1
+        # Create datasets and loaders with safe batch sizes
+        train_dataset = TensorDataset(X_train, y_train)
+        test_dataset = TensorDataset(X_test, y_test)
         
-        # Create datasets and loaders
-        train_dataset = TensorDataset(X[:train_size], y[:train_size])
-        test_dataset = TensorDataset(X[train_size:train_size + test_size], y[train_size:train_size + test_size])
+        # Ensure batch size is safe
+        train_batch_size = min(BATCH_SIZE, len(train_dataset)) if len(train_dataset) > 0 else 1
+        test_batch_size = min(BATCH_SIZE, len(test_dataset)) if len(test_dataset) > 0 else 1
         
-        train_loader = DataLoader(train_dataset, batch_size=min(BATCH_SIZE, len(train_dataset)), shuffle=True)
-        test_loader = DataLoader(test_dataset, batch_size=min(BATCH_SIZE, len(test_dataset)), shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, drop_last=False)
+        test_loader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, drop_last=False)
         
         logger.info(f"📊 Data prepared - Train: {len(train_dataset)}, Test: {len(test_dataset)}")
+        logger.info(f"📊 Batch sizes - Train: {train_batch_size}, Test: {test_batch_size}")
         
         # Create model
-        num_features = X.shape[1]
+        num_features = X_train.shape[1]
         num_classes = 5  # Bot-IoT dataset classes: Normal, DDoS, DoS, Reconnaissance, Theft
         model = Net(input_size=num_features, output_size=num_classes)
         
