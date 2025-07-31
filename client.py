@@ -374,7 +374,9 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         
         try:
             # Update local model parameters
+            logger.debug("Setting model parameters for evaluation")
             self.set_parameters(parameters)
+            logger.debug("Model parameters set successfully")
             
             # Evaluate model
             self.model.eval()
@@ -384,7 +386,7 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             correct = 0
             total = 0
             
-            # Zero-day specific metrics
+            # Track class-specific performance
             class_predictions = {}
             class_targets = {}
             
@@ -394,14 +396,18 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                     
                     # Validate data
                     if torch.isnan(data).any() or torch.isinf(data).any():
-                        logger.warning(f"Client {self.client_id}: Found NaN/Inf in test data, skipping batch")
+                        logger.warning(f"⚠️ Client {self.client_id}: NaN/Inf in test data (batch {batch_idx}), skipping")
                         continue
                     
                     output = self.model(data)
-                    loss = criterion(output, target)
+
+                    if torch.isnan(output).any() or torch.isinf(output).any():
+                        logger.warning(f"⚠️ Client {self.client_id}: NaN/Inf in model output (batch {batch_idx}), skipping")
+                        continue
                     
+                    loss = criterion(output, target)
                     if torch.isnan(loss) or torch.isinf(loss):
-                        logger.warning(f"Client {self.client_id}: Invalid loss in evaluation, skipping batch")
+                        logger.warning(f"⚠️ Client {self.client_id}: NaN/Inf loss in evaluation (batch {batch_idx}), skipping")
                         continue
                     
                     total_loss += loss.item() * data.size(0)
@@ -411,7 +417,6 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                     correct += batch_correct
                     total += target.size(0)
                     
-                    # Track per-class performance for zero-day analysis
                     for t, p in zip(target.cpu().numpy(), pred.cpu().numpy().flatten()):
                         if t not in class_targets:
                             class_targets[t] = 0
@@ -420,27 +425,24 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                         if t == p:
                             class_predictions[t] += 1
             
-            # Calculate metrics
             if total > 0:
                 accuracy = correct / total
                 avg_loss = total_loss / total
             else:
                 accuracy = 0.0
                 avg_loss = float('inf')
-                logger.warning(f"Client {self.client_id}: No samples processed during evaluation!")
+                logger.warning(f"⚠️ Client {self.client_id}: No valid samples processed in evaluation")
             
-            # Calculate per-class accuracy for zero-day analysis
             per_class_accuracy = {}
             for class_id in class_targets:
                 if class_targets[class_id] > 0:
                     per_class_accuracy[class_id] = class_predictions[class_id] / class_targets[class_id]
             
-            # Zero-day detection capability
             zero_day_detection_rate = self._calculate_zero_day_detection(per_class_accuracy)
             
             logger.info(f"✅ Client {self.client_id} {algorithm} evaluation complete - "
-                       f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}, "
-                       f"Zero-day detection: {zero_day_detection_rate:.4f}")
+                        f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}, "
+                        f"Zero-day detection: {zero_day_detection_rate:.4f}")
             
             return float(avg_loss), len(self.test_loader.dataset), {
                 "accuracy": float(accuracy),
@@ -450,18 +452,18 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                 "per_class_accuracy": {str(k): float(v) for k, v in per_class_accuracy.items()},
                 "total_classes_detected": len(per_class_accuracy)
             }
-            
+        
         except Exception as e:
             logger.error(f"❌ Client {self.client_id} evaluation failed: {e}")
             logger.error(traceback.format_exc())
             return float('inf'), 0, {
-                "accuracy": 0.0, 
+                "accuracy": 0.0,
                 "algorithm": algorithm,
                 "missing_attack": self.missing_attack,
                 "zero_day_detection_rate": 0.0,
                 "error": str(e)
             }
-    
+
     def _calculate_zero_day_detection(self, per_class_accuracy):
         """Calculate zero-day detection capability based on known attack detection."""
         if not per_class_accuracy:
@@ -488,7 +490,7 @@ def main():
         for attempt in range(max_retries):
             try:
                 logger.info(f"📂 Loading data for client {CLIENT_ID} (attempt {attempt + 1}/{max_retries})")
-                X, y = load_and_partition_data(
+                (X, y), (X_test, y_test), missing_attack = load_and_partition_data(
                     file_path="Bot_IoT.csv",
                     client_id=CLIENT_ID,
                     num_clients=NUM_CLIENTS,
@@ -503,6 +505,7 @@ def main():
                     time.sleep(2)
                 else:
                     raise e
+
         
         # Validate data size
         if len(X) < 50:
