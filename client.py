@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Subset
 import flwr as fl
 import logging
 from collections import OrderedDict
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 CLIENT_ID = int(os.environ.get("CLIENT_ID", 0))
 SERVER_ADDRESS = os.environ.get("SERVER_ADDRESS", "localhost:8080")
 NUM_CLIENTS = 5
-BATCH_SIZE = 64
+BATCH_SIZE = 16  # 🔧 FIX 3: Reduced from 64 for memory-constrained VMs
 EPOCHS = 1
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -125,6 +125,17 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         
         logger.info(f"🎯 Client {self.client_id} - Training Round {server_round} with {algorithm}")
         
+        # 🔧 FIX 6: Skip training if dataset too small
+        if len(self.train_loader.dataset) < 20:
+            logger.warning(f"⚠️ Client {self.client_id}: Not enough data to train (only {len(self.train_loader.dataset)} samples), skipping round")
+            return self.get_parameters(config={}), 0, {
+                "loss": 0.0,
+                "accuracy": 0.0,
+                "algorithm": algorithm,
+                "missing_attack": self.missing_attack,
+                "skipped": True
+            }
+        
         try:
             if algorithm == "FedProx":
                 return self._fit_fedprox(parameters, config)
@@ -146,11 +157,27 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             }
 
     def _fit_fedavg(self, parameters, config):
-        """Standard FedAvg training implementation."""
+        """Standard FedAvg training implementation with resource optimizations."""
         server_round = config.get('server_round', 'unknown')
         
         # Update local model parameters
         self.set_parameters(parameters)
+        
+        # 🔧 FIX 1: Sample subset of training data per round
+        subset_ratio = 0.3  # Use 30% of data per round
+        subset_size = int(subset_ratio * len(self.train_loader.dataset))
+        subset_indices = torch.randperm(len(self.train_loader.dataset))[:subset_size]
+        train_subset = Subset(self.train_loader.dataset, subset_indices)
+        
+        # Create new loader with smaller batch size
+        subset_loader = DataLoader(
+            train_subset, 
+            batch_size=BATCH_SIZE,  # Already reduced to 16
+            shuffle=True,
+            drop_last=False
+        )
+        
+        logger.info(f"📊 Client {self.client_id}: Using {subset_size}/{len(self.train_loader.dataset)} samples this round")
         
         # Train model
         self.model.train()
@@ -168,7 +195,12 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             epoch_samples = 0
             epoch_correct = 0
             
-            for batch_idx, (data, target) in enumerate(self.train_loader):
+            # 🔧 FIX 2: Limit number of batches per epoch
+            for batch_idx, (data, target) in enumerate(subset_loader):
+                if batch_idx >= 10:  # Process max 10 batches
+                    logger.debug(f"Client {self.client_id}: Limiting to 10 batches per epoch")
+                    break
+                
                 data, target = data.to(self.device), target.to(self.device)
                 
                 # Validate data
@@ -216,14 +248,16 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             training_accuracy = 0.0
             logger.warning(f"Client {self.client_id}: No samples processed during training!")
         
-        logger.info(f"✅ Client {self.client_id} FedAvg training completed - Loss: {avg_loss:.4f}, Accuracy: {training_accuracy:.4f}")
+        logger.info(f"✅ Client {self.client_id} FedAvg training completed - Loss: {avg_loss:.4f}, Accuracy: {training_accuracy:.4f}, Time: {training_time:.2f}s")
         
+        # Return number of samples from full dataset for proper weighting
         return self.get_parameters(config={}), len(self.train_loader.dataset), {
             "loss": float(avg_loss),
             "accuracy": float(training_accuracy),
             "algorithm": "FedAvg",
             "training_time": training_time,
-            "missing_attack": self.missing_attack
+            "missing_attack": self.missing_attack,
+            "samples_used": subset_size
         }
 
     def _fit_fedprox(self, parameters, config):
@@ -236,6 +270,13 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         # Update local model parameters and store global model
         self.set_parameters(parameters)
         global_params = [param.clone().detach() for param in self.model.parameters()]
+        
+        # 🔧 FIX 1: Sample subset for FedProx too
+        subset_ratio = 0.3
+        subset_size = int(subset_ratio * len(self.train_loader.dataset))
+        subset_indices = torch.randperm(len(self.train_loader.dataset))[:subset_size]
+        train_subset = Subset(self.train_loader.dataset, subset_indices)
+        subset_loader = DataLoader(train_subset, batch_size=BATCH_SIZE, shuffle=True)
         
         # Train model with proximal term
         self.model.train()
@@ -255,7 +296,11 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             epoch_samples = 0
             epoch_correct = 0
             
-            for batch_idx, (data, target) in enumerate(self.train_loader):
+            # 🔧 FIX 2: Limit batches for FedProx
+            for batch_idx, (data, target) in enumerate(subset_loader):
+                if batch_idx >= 10:
+                    break
+                
                 data, target = data.to(self.device), target.to(self.device)
                 
                 # Validate data
@@ -320,7 +365,7 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             logger.warning(f"Client {self.client_id}: No samples processed during FedProx training!")
         
         logger.info(f"✅ Client {self.client_id} FedProx training completed - Loss: {avg_loss:.4f}, "
-                   f"Proximal: {avg_proximal:.6f}, Accuracy: {training_accuracy:.4f}")
+                   f"Proximal: {avg_proximal:.6f}, Accuracy: {training_accuracy:.4f}, Time: {training_time:.2f}s")
         
         return self.get_parameters(config={}), len(self.train_loader.dataset), {
             "loss": float(avg_loss),
@@ -329,7 +374,8 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             "proximal_term": float(avg_proximal),
             "mu": mu,
             "training_time": training_time,
-            "missing_attack": self.missing_attack
+            "missing_attack": self.missing_attack,
+            "samples_used": subset_size
         }
 
     def _fit_async(self, parameters, config):
@@ -378,10 +424,9 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             self.set_parameters(parameters)
             logger.debug("Model parameters set successfully")
             
-            # CRITICAL FIX: Check if we have test data
+            # Check if we have test data
             if len(self.test_loader.dataset) == 0:
                 logger.warning(f"⚠️ Client {self.client_id} has no test data!")
-                # Return minimal valid metrics that won't crash aggregation
                 return 0.0, 1, {
                     "accuracy": 0.0,
                     "algorithm": algorithm,
@@ -437,7 +482,7 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                         if t == p:
                             class_predictions[t] += 1
             
-            # CRITICAL FIX: Ensure we processed some samples
+            # Ensure we processed some samples
             if total == 0:
                 logger.warning(f"⚠️ Client {self.client_id}: No valid samples processed in evaluation")
                 return 0.0, 1, {
@@ -474,7 +519,6 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         except Exception as e:
             logger.error(f"❌ Client {self.client_id} evaluation failed: {e}")
             logger.error(traceback.format_exc())
-            # Return minimal valid result that won't break aggregation
             return 0.0, 1, {
                 "accuracy": 0.0,
                 "algorithm": algorithm,
@@ -504,8 +548,8 @@ def main():
             logger.error("❌ Server is not available. Exiting.")
             return False
         
-        # Load and partition data with retry mechanism
-        max_retries = 3
+        # 🔧 FIX 5: Add retry mechanism for data loading
+        max_retries = 5
         for attempt in range(max_retries):
             try:
                 logger.info(f"📂 Loading data for client {CLIENT_ID} (attempt {attempt + 1}/{max_retries})")
@@ -514,19 +558,17 @@ def main():
                     client_id=CLIENT_ID,
                     num_clients=NUM_CLIENTS,
                     label_col="category",
-                    chunk_size=50000  # Optimized for reliability
+                    chunk_size=10000  # 🔧 FIX 1: Reduced from 50000
                 )
                 logger.info(f"✅ Data loaded successfully: {len(X_train)} train, {len(X_test)} test samples")
                 break
             except Exception as e:
                 logger.error(f"❌ Data loading attempt {attempt + 1} failed: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(2)
+                    time.sleep(5)
                 else:
                     raise e
-
         
-        # CRITICAL FIX: Use data as provided by partition_data - do NOT split again
         # Validate data size
         if len(X_train) < 10:
             logger.warning(f"⚠️ Client {CLIENT_ID} has very few training samples ({len(X_train)})")
@@ -558,7 +600,7 @@ def main():
         # Create enhanced Flower client
         client = EnhancedFlowerClient(model, train_loader, test_loader, DEVICE, CLIENT_ID)
         
-        # Connect to server with robust retry mechanism
+        # 🔧 FIX 5: Enhanced retry mechanism for server connection
         max_retries = 5
         for attempt in range(max_retries):
             try:
@@ -572,7 +614,7 @@ def main():
             except Exception as e:
                 logger.error(f"❌ Connection attempt {attempt + 1} failed: {e}")
                 if attempt < max_retries - 1:
-                    wait_time = min(2 ** attempt, 30)  # Exponential backoff with cap
+                    wait_time = min(5 * (attempt + 1), 30)  # Progressive backoff
                     logger.info(f"⏳ Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                 else:

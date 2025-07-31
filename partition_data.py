@@ -51,15 +51,42 @@ def load_global_encoder_and_features():
     
     return global_encoder, global_classes, global_features
 
-def load_full_dataset(file_path, label_col="category", sample_size_per_class=8000):
+def load_full_dataset(file_path, label_col="category", sample_size_per_class=8000,  chunk_size = 50000):
     """
     Load the full dataset with balanced sampling across all classes
     """
     logger.info(f"🔍 Loading full dataset with balanced sampling")
     
+def load_full_dataset(file_path, label_col="category", sample_size_per_class=8000,  chunk_size = 50000):
+    """
+    Load the full dataset with balanced sampling across all classes
+    """
+    logger.info(f"🔍 Loading full dataset with balanced sampling")
+    logger.info(f"📦 Using chunk_size = {chunk_size}")
+
     # First pass: determine all unique classes and their counts
     class_counts = {}
-    chunk_size = 50000
+    
+    for chunk in pd.read_csv(file_path, chunksize=chunk_size, usecols=[label_col]):
+        value_counts = chunk[label_col].value_counts()
+        for class_name, count in value_counts.items():
+            class_counts[class_name] = class_counts.get(class_name, 0) + count
+    
+    logger.info(f"Class distribution in dataset: {class_counts}")
+    
+    # Second pass: collect balanced samples
+    samples_per_class = {cls: [] for cls in class_counts.keys()}
+    samples_collected = {cls: 0 for cls in class_counts.keys()}
+    
+    # Calculate sampling probability for each class
+    sampling_probs = {}
+    for cls in class_counts.keys():
+        # Ensure we don't try to sample more than available
+        target_samples = min(sample_size_per_class, class_counts[cls])
+        sampling_probs[cls] = target_samples / class_counts[cls]
+    
+    # First pass: determine all unique classes and their counts
+    class_counts = {}
     
     for chunk in pd.read_csv(file_path, chunksize=chunk_size, usecols=[label_col]):
         value_counts = chunk[label_col].value_counts()
@@ -277,7 +304,7 @@ def load_and_partition_data(file_path, client_id, num_clients, label_col="catego
         logger.info(f"Client {client_id} will NOT see '{missing_attack}' attacks during training")
         
         # Load full balanced dataset
-        full_dataset = load_full_dataset(file_path, label_col, sample_size_per_class=8000)
+        full_dataset = load_full_dataset(file_path, label_col, sample_size_per_class=8000, chunk_size=chunk_size)
         
         # Create zero-day partitions
         train_data, test_data = create_zero_day_partition(

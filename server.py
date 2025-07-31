@@ -301,7 +301,9 @@ def main():
         # Start Flower server
         fl.server.start_server(
             server_address=f"0.0.0.0:{args.port}",
-            config=fl.server.ServerConfig(num_rounds=args.rounds),
+            config=fl.server.ServerConfig(num_rounds=args.rounds,
+            round_timeout=120
+            ),
             strategy=strategy,
         )
         
