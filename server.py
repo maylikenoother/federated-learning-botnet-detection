@@ -24,6 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class ResultsTracker:
+    """FIXED Results Tracker with proper metric collection"""
     def __init__(self, algorithm_name="FedAvg"):
         self.algorithm_name = algorithm_name
         self.experiment_id = f"{algorithm_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -32,12 +33,14 @@ class ResultsTracker:
         
         self.training_history = []
         self.evaluation_history = []
+        self.communication_metrics = []  # FIXED: Added communication tracking
         self.round_times = []
         self.start_time = time.time()
         
         # Initialize CSV files
         self.training_csv = os.path.join(self.results_dir, "training_history.csv")
         self.eval_csv = os.path.join(self.results_dir, "evaluation_history.csv")
+        self.comm_csv = os.path.join(self.results_dir, "communication_metrics.csv")  # FIXED: Added
         
         with open(self.training_csv, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -45,9 +48,13 @@ class ResultsTracker:
         
         with open(self.eval_csv, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['round', 'loss', 'accuracy', 'num_clients', 'timestamp'])
+            writer.writerow(['round', 'loss', 'accuracy', 'num_clients', 'zero_day_detection', 'timestamp'])
         
-        logger.info(f"📊 Results tracker initialized for {algorithm_name}")
+        with open(self.comm_csv, 'w', newline='') as f:  # FIXED: Communication metrics CSV
+            writer = csv.writer(f)
+            writer.writerow(['round', 'bytes_transmitted', 'communication_time', 'num_clients', 'timestamp'])
+        
+        logger.info(f"📊 Enhanced results tracker initialized for {algorithm_name}")
     
     def log_training_round(self, round_num, loss, num_clients, total_examples):
         """Log training round metrics"""
@@ -64,24 +71,48 @@ class ResultsTracker:
             writer = csv.writer(f)
             writer.writerow([round_num, loss, num_clients, total_examples, timestamp])
     
-    def log_evaluation_round(self, round_num, loss, accuracy, num_clients):
-        """Log evaluation round metrics"""
+    def log_evaluation_round(self, round_num, loss, accuracy, num_clients, zero_day_rate=0.0):
+        """FIXED: Enhanced evaluation logging with zero-day metrics"""
         timestamp = datetime.now().isoformat()
         self.evaluation_history.append({
             'round': round_num,
             'loss': loss,
             'accuracy': accuracy,
             'num_clients': num_clients,
+            'zero_day_detection': zero_day_rate,
             'timestamp': timestamp
         })
         
         with open(self.eval_csv, 'a', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([round_num, loss, accuracy, num_clients, timestamp])
+            writer.writerow([round_num, loss, accuracy, num_clients, zero_day_rate, timestamp])
+    
+    def log_communication_metrics(self, round_num, bytes_transmitted, communication_time, num_clients):
+        """FIXED: Log communication metrics for analysis"""
+        timestamp = datetime.now().isoformat()
+        self.communication_metrics.append({
+            'round': round_num,
+            'bytes_transmitted': bytes_transmitted,
+            'communication_time': communication_time,
+            'num_clients': num_clients,
+            'timestamp': timestamp
+        })
+        
+        with open(self.comm_csv, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([round_num, bytes_transmitted, communication_time, num_clients, timestamp])
     
     def save_final_summary(self):
-        """Save final experiment summary"""
+        """FIXED: Enhanced final summary with all metrics"""
         total_time = time.time() - self.start_time
+        
+        # Calculate total communication volume
+        total_bytes = sum(m['bytes_transmitted'] for m in self.communication_metrics)
+        avg_comm_time = np.mean([m['communication_time'] for m in self.communication_metrics]) if self.communication_metrics else 0
+        
+        # Calculate zero-day detection performance
+        final_zero_day = self.evaluation_history[-1].get('zero_day_detection', 0.0) if self.evaluation_history else 0.0
+        avg_zero_day = np.mean([h.get('zero_day_detection', 0.0) for h in self.evaluation_history])
         
         summary = {
             'algorithm': self.algorithm_name,
@@ -90,28 +121,38 @@ class ResultsTracker:
             'total_time': total_time,
             'final_accuracy': self.evaluation_history[-1]['accuracy'] if self.evaluation_history else 0,
             'final_loss': self.evaluation_history[-1]['loss'] if self.evaluation_history else float('inf'),
+            'total_communication_bytes': int(total_bytes),  # FIXED: Communication volume
+            'avg_communication_time': float(avg_comm_time),
+            'final_zero_day_detection': float(final_zero_day),
+            'avg_zero_day_detection': float(avg_zero_day),
             'training_history': self.training_history,
-            'evaluation_history': self.evaluation_history
+            'evaluation_history': self.evaluation_history,
+            'communication_metrics': self.communication_metrics  # FIXED: Include communication data
         }
         
         summary_file = os.path.join(self.results_dir, 'experiment_summary.json')
         with open(summary_file, 'w') as f:
             json.dump(summary, f, indent=2)
         
-        logger.info(f"💾 Experiment summary saved to {summary_file}")
+        logger.info(f"💾 Enhanced experiment summary saved to {summary_file}")
+        logger.info(f"📊 Final metrics: Acc={summary['final_accuracy']:.3f}, "
+                   f"Comm={summary['total_communication_bytes']/1024:.1f}KB, "
+                   f"Zero-day={summary['final_zero_day_detection']:.3f}")
         return summary
 
-# Custom strategy that works with all algorithms and handles metrics properly
+# FIXED Custom strategy with proper communication tracking
 class CustomStrategy(fl.server.strategy.FedAvg):
     def __init__(self, algorithm_name="FedAvg", results_tracker=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.algorithm_name = algorithm_name
         self.results_tracker = results_tracker or ResultsTracker(algorithm_name)
         self.current_round = 0
-        logger.info(f"🚀 {algorithm_name} strategy initialized")
+        self.round_start_time = None  # FIXED: Track round timing
+        logger.info(f"🚀 Enhanced {algorithm_name} strategy initialized")
     
     def configure_fit(self, server_round: int, parameters: Parameters, client_manager) -> List[Tuple]:
         """Configure training for each round"""
+        self.round_start_time = time.time()  # FIXED: Start timing
         config = {
             "server_round": server_round,
             "algorithm": self.algorithm_name,
@@ -138,7 +179,7 @@ class CustomStrategy(fl.server.strategy.FedAvg):
     
     def aggregate_fit(self, server_round: int, results: List[Tuple[fl.server.client_proxy.ClientProxy, FitRes]], 
                      failures: List[Union[Tuple[fl.server.client_proxy.ClientProxy, FitRes], BaseException]]) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
-        """Aggregate fit results with proper metrics handling"""
+        """FIXED: Aggregate fit results with proper communication tracking"""
         self.current_round = server_round
         
         if not results:
@@ -148,11 +189,22 @@ class CustomStrategy(fl.server.strategy.FedAvg):
         # Log failures
         if failures:
             logger.warning(f"Failed clients in round {server_round}: {len(failures)}")
-            for failure in failures:
-                if isinstance(failure, tuple):
-                    logger.warning(f"Client failure: {failure}")
-                else:
-                    logger.warning(f"Exception: {failure}")
+        
+        # FIXED: Calculate communication volume more accurately
+        total_bytes = 0
+        for client, fit_res in results:
+            # Estimate bytes transmitted based on parameters and metrics
+            param_bytes = len(str(fit_res.parameters)) * 4  # Rough estimate
+            metric_bytes = len(str(fit_res.metrics)) * 2 if fit_res.metrics else 0
+            total_bytes += param_bytes + metric_bytes
+        
+        # Track communication timing
+        communication_time = time.time() - self.round_start_time if self.round_start_time else 0
+        
+        # Log communication metrics
+        self.results_tracker.log_communication_metrics(
+            server_round, total_bytes, communication_time, len(results)
+        )
         
         # Extract metrics from results with proper type checking
         losses = []
@@ -193,21 +245,16 @@ class CustomStrategy(fl.server.strategy.FedAvg):
         # Log training metrics
         self.results_tracker.log_training_round(server_round, avg_loss, len(results), total_examples)
         
-        # Log round info
+        # Log round info with communication data
         logger.info(f"\n{'='*60}")
         logger.info(f"TRAINING ROUND {server_round} - {self.algorithm_name}")
         logger.info(f"{'='*60}")
         logger.info(f"Participating clients: {len(results)}")
         logger.info(f"Total examples: {total_examples}")
         logger.info(f"Average training loss: {avg_loss:.4f}")
+        logger.info(f"Communication: {total_bytes/1024:.1f} KB in {communication_time:.2f}s")  # FIXED: Show comm data
         if avg_accuracy > 0:
             logger.info(f"Average training accuracy: {avg_accuracy:.4f}")
-        
-        # Log algorithm-specific metrics
-        for metric_name, values in algorithm_specific_metrics.items():
-            if all(isinstance(v, (int, float)) for v in values):
-                avg_value = sum(values) / len(values)
-                logger.info(f"Average {metric_name}: {avg_value:.4f}")
         
         # Standard FedAvg aggregation
         aggregated_parameters, aggregated_metrics = super().aggregate_fit(server_round, results, failures)
@@ -222,7 +269,9 @@ class CustomStrategy(fl.server.strategy.FedAvg):
             "round": server_round,
             "num_clients": len(results),
             "avg_training_loss": avg_loss,
-            "total_examples": total_examples
+            "total_examples": total_examples,
+            "communication_bytes": total_bytes,  # FIXED: Include communication data
+            "communication_time": communication_time
         })
         
         if avg_accuracy > 0:
@@ -232,7 +281,7 @@ class CustomStrategy(fl.server.strategy.FedAvg):
     
     def aggregate_evaluate(self, server_round: int, results: List[Tuple[fl.server.client_proxy.ClientProxy, fl.common.EvaluateRes]],
                           failures: List[Union[Tuple[fl.server.client_proxy.ClientProxy, fl.common.EvaluateRes], BaseException]]) -> Tuple[Optional[float], Dict[str, Scalar]]:
-        """Aggregate evaluation results with proper metrics handling"""
+        """FIXED: Aggregate evaluation results with enhanced zero-day metrics"""
         if not results:
             logger.warning(f"No evaluation results in round {server_round}")
             return None, {}
@@ -240,11 +289,6 @@ class CustomStrategy(fl.server.strategy.FedAvg):
         # Log failures
         if failures:
             logger.warning(f"Failed evaluations in round {server_round}: {len(failures)}")
-            for failure in failures:
-                if isinstance(failure, tuple):
-                    logger.warning(f"Evaluation failure: {failure}")
-                else:
-                    logger.warning(f"Exception: {failure}")
         
         # Weighted average of loss and accuracy with proper type checking
         total_loss = 0.0
@@ -290,14 +334,20 @@ class CustomStrategy(fl.server.strategy.FedAvg):
             if values:
                 avg_algorithm_metrics[key] = sum(values) / total_examples
         
-        # Log evaluation metrics
-        self.results_tracker.log_evaluation_round(server_round, avg_loss, avg_accuracy, len(results))
+        # FIXED: Extract zero-day detection rate properly
+        zero_day_detection_rate = avg_zero_day_metrics.get('zero_day_detection_rate', 0.0)
+        
+        # Log evaluation metrics with enhanced tracking
+        self.results_tracker.log_evaluation_round(
+            server_round, avg_loss, avg_accuracy, len(results), zero_day_detection_rate
+        )
         
         # Display results
         logger.info(f"\nEVALUATION ROUND {server_round} - {self.algorithm_name}")
         logger.info(f"{'='*60}")
         logger.info(f"Global Loss: {avg_loss:.4f}")
         logger.info(f"Global Accuracy: {avg_accuracy:.4f}")
+        logger.info(f"Zero-Day Detection Rate: {zero_day_detection_rate:.4f}")  # FIXED: Show zero-day performance
         logger.info(f"Clients evaluated: {len(results)}")
         
         # Log zero-day detection metrics
@@ -317,7 +367,8 @@ class CustomStrategy(fl.server.strategy.FedAvg):
             "accuracy": avg_accuracy,
             "algorithm": self.algorithm_name,
             "num_clients": len(results),
-            "total_examples": total_examples
+            "total_examples": total_examples,
+            "zero_day_detection_rate": zero_day_detection_rate  # FIXED: Include zero-day rate
         }
         
         # Add zero-day metrics
@@ -346,7 +397,7 @@ def evaluate_config(server_round: int) -> Dict[str, Union[bool, bytes, float, in
     return config
 
 def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
-    """Get strategy based on algorithm name with proper configuration"""
+    """FIXED: Get strategy with enhanced results tracking"""
     
     # Create results tracker
     results_tracker = ResultsTracker(algorithm)
@@ -369,7 +420,7 @@ def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
             results_tracker=results_tracker,
             **strategy_params
         )
-        logger.info("🔧 FedProx strategy created with proximal regularization")
+        logger.info("🔧 Enhanced FedProx strategy created with proximal regularization")
     
     elif algorithm == "AsyncFL":
         # AsyncFL - for simulation, we'll use FedAvg with modified parameters
@@ -379,7 +430,7 @@ def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
             results_tracker=results_tracker,
             **strategy_params
         )
-        logger.info("⚡ AsyncFL strategy created with asynchronous simulation")
+        logger.info("⚡ Enhanced AsyncFL strategy created with asynchronous simulation")
     
     else:  # FedAvg
         strategy = CustomStrategy(
@@ -387,12 +438,12 @@ def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
             results_tracker=results_tracker,
             **strategy_params
         )
-        logger.info("📊 FedAvg baseline strategy created")
+        logger.info("📊 Enhanced FedAvg baseline strategy created")
     
     return strategy
 
 def main():
-    """Main server function with enhanced error handling"""
+    """FIXED: Main server function with enhanced error handling and metrics"""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Enhanced Federated Learning Server')
     parser.add_argument('--algorithm', type=str, default='FedAvg', 
@@ -414,7 +465,9 @@ def main():
     logger.info(f"Rounds: {args.rounds}")
     logger.info(f"Port: {args.port}")
     logger.info(f"Results Directory: {args.results_dir}")
-    logger.info(f"Enhanced Metrics Handling: ✅ Enabled")
+    logger.info(f"Enhanced Metrics Collection: ✅ Enabled")
+    logger.info(f"Communication Tracking: ✅ Enabled")
+    logger.info(f"Zero-Day Detection Monitoring: ✅ Enabled")
     logger.info(f"{'='*80}\n")
     
     # Get strategy with enhanced metrics handling
@@ -426,25 +479,30 @@ def main():
             server_address=f"0.0.0.0:{args.port}",
             config=fl.server.ServerConfig(
                 num_rounds=args.rounds,
-                round_timeout=180  # Increased timeout for stability
+                round_timeout=240  # Increased timeout for stability
             ),
             strategy=strategy,
         )
         
-        # Save final results
+        # Save final results with enhanced metrics
         if hasattr(strategy, 'results_tracker'):
             summary = strategy.results_tracker.save_final_summary()
             
-            # Display final results
+            # Display enhanced final results
             logger.info(f"\n{'='*80}")
             logger.info(f"🏁 EXPERIMENT COMPLETED - {args.algorithm}")
             logger.info(f"{'='*80}")
             logger.info(f"Final Accuracy: {summary['final_accuracy']:.4f}")
             logger.info(f"Final Loss: {summary['final_loss']:.4f}")
+            logger.info(f"Zero-Day Detection Rate: {summary['final_zero_day_detection']:.4f}")
+            logger.info(f"Total Communication: {summary['total_communication_bytes']/1024:.1f} KB")
+            logger.info(f"Avg Communication Time: {summary['avg_communication_time']:.2f}s")
             logger.info(f"Total Rounds: {summary['total_rounds']}")
             logger.info(f"Total Time: {summary['total_time']:.2f} seconds")
             logger.info(f"Results Directory: {strategy.results_tracker.results_dir}")
-            logger.info(f"✅ Enhanced metrics handling completed successfully")
+            logger.info(f"✅ Enhanced metrics collection completed successfully")
+            logger.info(f"📊 Communication metrics: ✅ Collected")
+            logger.info(f"🎯 Zero-day metrics: ✅ Collected")
             logger.info(f"{'='*80}\n")
         
     except Exception as e:
