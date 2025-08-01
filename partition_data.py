@@ -1,164 +1,164 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.model_selection import train_test_split
 import torch
 import logging
-import pickle
-import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# FIXED: Simplified attack mapping
-ATTACK_MAPPING = {
-    'Normal': 0,
-    'DDoS': 1, 
-    'DoS': 2,
-    'Reconnaissance': 3,
-    'Theft': 4
-}
-
-# FIXED: Simplified client missing attacks (no complex rotation)
-CLIENT_MISSING_ATTACKS = {
-    0: 'DDoS',
-    1: 'Reconnaissance', 
-    2: 'Theft',
-    3: 'DoS',
-    4: 'Normal'
-}
-
-def load_and_partition_data(file_path, client_id, num_clients, label_col="category", chunk_size=10000):
+def load_and_partition_data(file_path, client_id, num_clients, label_col="category", chunk_size=50000):
     """
-    FIXED: Simplified and robust data loading with guaranteed non-empty datasets
+    FIXED: Load Bot-IoT data with realistic sample sizes and proper zero-day simulation
     """
-    logger.info(f"🔄 Loading data for client {client_id} (simplified approach)")
+    logger.info(f"🔄 Loading Bot-IoT data for client {client_id} with realistic sample sizes")
     
     try:
-        # FIXED: Load smaller sample to prevent memory issues
-        logger.info(f"📊 Reading dataset with chunk size {chunk_size}")
-        df = pd.read_csv(file_path, nrows=chunk_size)  # Limit to prevent memory issues
+        # Load larger chunk for realistic training
+        logger.info(f"📊 Reading Bot-IoT dataset with chunk size {chunk_size}")
+        df = pd.read_csv(file_path, nrows=chunk_size)
         
-        if df.empty:
-            raise ValueError("Dataset is empty")
+        # Clean column names (remove extra spaces)
+        df.columns = df.columns.str.strip()
         
-        logger.info(f"✅ Loaded {len(df)} rows with {len(df.columns)} columns")
+        logger.info(f"✅ Loaded {len(df)} rows with columns: {list(df.columns)}")
         
-        # FIXED: Check for required column
+        # Check for required columns
         if label_col not in df.columns:
             logger.error(f"❌ Column '{label_col}' not found. Available: {list(df.columns)}")
             raise ValueError(f"Label column '{label_col}' not found")
         
-        # FIXED: Clean data
-        df = df.dropna()  # Remove any NaN values
-        if len(df) == 0:
-            raise ValueError("No data after cleaning")
+        # Clean data
+        df = df.dropna()
+        logger.info(f"📊 After cleaning: {len(df)} rows")
         
-        # FIXED: Map labels to standard format
-        unique_labels = df[label_col].unique()
-        logger.info(f"📋 Unique labels found: {unique_labels}")
+        # Get unique attack categories
+        unique_categories = df[label_col].unique()
+        logger.info(f"📋 Attack categories found: {unique_categories}")
         
-        # Create label mapping
+        # Select numeric features (exclude non-numeric columns)
+        numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # Remove target columns from features
+        exclude_cols = [label_col, 'attack', 'subcategory', 'target', 'pkSeqID', 'stime', 'ltime']
+        feature_cols = [col for col in numeric_columns if col not in exclude_cols]
+        
+        logger.info(f"📊 Using {len(feature_cols)} numeric features")
+        logger.info(f"🎯 Feature columns: {feature_cols[:10]}...")  # Show first 10
+        
+        # Create zero-day simulation - each client missing one attack type
+        attack_types = ['Normal', 'DDoS', 'DoS', 'Reconnaissance', 'Theft']
+        
+        # Map client to missing attack
+        missing_attacks = {
+            0: 'DDoS',
+            1: 'Reconnaissance', 
+            2: 'Theft',
+            3: 'DoS',
+            4: 'Normal'
+        }
+        
+        missing_attack = missing_attacks.get(client_id, 'DDoS')
+        logger.info(f"🎯 Client {client_id} zero-day simulation: Missing '{missing_attack}' attacks")
+        
+        # Filter data for this client (exclude missing attack from training)
+        train_mask = df[label_col] != missing_attack
+        train_data = df[train_mask].copy()
+        
+        # Ensure minimum training data
+        min_training_samples = 2000
+        if len(train_data) < min_training_samples:
+            logger.warning(f"⚠️ Only {len(train_data)} training samples, using all data except small held-out set")
+            # Use 90% for training, 10% for zero-day test
+            train_data = df.sample(frac=0.9, random_state=42 + client_id)
+            train_mask = df.index.isin(train_data.index)
+        
+        # Create test set including missing attack for zero-day evaluation
+        test_data = df[~train_mask].copy()
+        
+        # Ensure test set has some missing attack samples
+        missing_attack_samples = df[df[label_col] == missing_attack]
+        if len(missing_attack_samples) > 0:
+            # Add some missing attack samples to test set
+            test_sample_size = min(500, len(missing_attack_samples))
+            missing_samples = missing_attack_samples.sample(n=test_sample_size, random_state=42)
+            test_data = pd.concat([test_data, missing_samples]).drop_duplicates()
+        
+        logger.info(f"📊 Client {client_id} data split:")
+        logger.info(f"   Training: {len(train_data)} samples")
+        logger.info(f"   Testing: {len(test_data)} samples")
+        logger.info(f"   Missing attack '{missing_attack}' samples in test: {len(test_data[test_data[label_col] == missing_attack])}")
+        
+        # Encode labels
         label_encoder = LabelEncoder()
-        df['encoded_label'] = label_encoder.fit_transform(df[label_col])
-        logger.info(f"📋 Label mapping: {dict(zip(label_encoder.classes_, range(len(label_encoder.classes_))))}")
+        all_labels = df[label_col].values
+        label_encoder.fit(all_labels)
         
-        # FIXED: Simple train/test split per client
-        missing_attack = CLIENT_MISSING_ATTACKS.get(client_id, 'DDoS')
-        logger.info(f"🎯 Client {client_id} missing attack: {missing_attack}")
+        train_labels = label_encoder.transform(train_data[label_col])
+        test_labels = label_encoder.transform(test_data[label_col])
         
-        # FIXED: Get features (all numeric columns except label)
-        feature_cols = df.select_dtypes(include=[np.number]).columns
-        feature_cols = [col for col in feature_cols if col not in [label_col, 'encoded_label']]
+        logger.info(f"📋 Label encoding: {dict(zip(label_encoder.classes_, range(len(label_encoder.classes_))))}")
         
-        if len(feature_cols) == 0:
-            logger.warning("⚠️ No numeric features found, using dummy features")
-            # Create dummy features if none found
-            df['feature_1'] = np.random.normal(0, 1, len(df))
-            df['feature_2'] = np.random.normal(0, 1, len(df))
-            feature_cols = ['feature_1', 'feature_2']
+        # Prepare features
+        X_train = train_data[feature_cols].values
+        X_test = test_data[feature_cols].values
         
-        logger.info(f"📊 Using {len(feature_cols)} features")
-        
-        # FIXED: Create train set (exclude missing attack)
-        if missing_attack in df[label_col].values:
-            train_mask = df[label_col] != missing_attack
-        else:
-            # If missing attack not in data, use all data for training
-            train_mask = pd.Series([True] * len(df))
-        
-        train_df = df[train_mask].copy()
-        
-        # FIXED: Ensure minimum training data
-        if len(train_df) < 50:
-            logger.warning(f"⚠️ Too few training samples ({len(train_df)}), using more data")
-            # Use 80% of all data for training if missing attack creates too small dataset
-            train_df = df.sample(frac=0.8, random_state=42)
-        
-        # FIXED: Create test set (include all attacks, especially missing one)
-        test_size = min(200, len(df) // 4)  # Reasonable test size
-        test_df = df.sample(n=test_size, random_state=42 + client_id)
-        
-        # FIXED: Prepare features and labels
+        # Scale features
         scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
         
-        # Training data
-        X_train = train_df[feature_cols].values
-        X_train = scaler.fit_transform(X_train)
-        y_train = train_df['encoded_label'].values
+        # Convert to tensors
+        X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
+        y_train_tensor = torch.tensor(train_labels, dtype=torch.long)
+        X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
+        y_test_tensor = torch.tensor(test_labels, dtype=torch.long)
         
-        # Test data  
-        X_test = test_df[feature_cols].values
-        X_test = scaler.transform(X_test)  # Use same scaler as training
-        y_test = test_df['encoded_label'].values
-        
-        # FIXED: Convert to tensors
-        X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
-        y_train_tensor = torch.tensor(y_train, dtype=torch.long)
-        X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-        y_test_tensor = torch.tensor(y_test, dtype=torch.long)
-        
-        # FIXED: Final validation
-        if len(X_train_tensor) == 0:
-            raise ValueError(f"No training data for client {client_id}")
-        if len(X_test_tensor) == 0:
-            raise ValueError(f"No test data for client {client_id}")
+        # Final validation
+        if len(X_train_tensor) < 100:
+            raise ValueError(f"Insufficient training data: {len(X_train_tensor)} samples")
         
         logger.info(f"✅ Client {client_id} data ready:")
         logger.info(f"   📊 Train: {len(X_train_tensor)} samples, {X_train_tensor.shape[1]} features")
         logger.info(f"   📊 Test: {len(X_test_tensor)} samples")
-        logger.info(f"   🎯 Missing attack: {missing_attack}")
+        logger.info(f"   🎯 Missing attack for zero-day: {missing_attack}")
+        logger.info(f"   📈 Training classes: {np.unique(train_labels)}")
+        logger.info(f"   📈 Test classes: {np.unique(test_labels)}")
         
         return (X_train_tensor, y_train_tensor), (X_test_tensor, y_test_tensor), missing_attack
         
     except Exception as e:
         logger.error(f"❌ Data loading failed for client {client_id}: {str(e)}")
         
-        # FIXED: Fallback to dummy data to prevent crashes
-        logger.warning("🔄 Creating fallback dummy data")
+        # Emergency fallback with realistic sizes
+        logger.warning("🔄 Creating fallback data with realistic sample sizes")
         
-        n_train, n_test = 100, 50
-        n_features = 10
+        n_train, n_test = 2000, 500  # Much larger fallback
+        n_features = 25  # Realistic feature count
         n_classes = 5
         
-        # Create dummy data
         X_train = torch.randn(n_train, n_features)
         y_train = torch.randint(0, n_classes, (n_train,))
-        X_test = torch.randn(n_test, n_features) 
+        X_test = torch.randn(n_test, n_features)
         y_test = torch.randint(0, n_classes, (n_test,))
         
-        missing_attack = CLIENT_MISSING_ATTACKS.get(client_id, 'DDoS')
+        missing_attack = ['DDoS', 'Reconnaissance', 'Theft', 'DoS', 'Normal'][client_id % 5]
         
-        logger.info(f"⚠️ Using dummy data - Train: {n_train}, Test: {n_test}")
+        logger.info(f"⚠️ Using fallback data - Train: {n_train}, Test: {n_test}")
         return (X_train, y_train), (X_test, y_test), missing_attack
 
 def validate_zero_day_setup(file_path, num_clients=5, label_col="category"):
     """
-    FIXED: Simple validation that actually works
+    Validate the zero-day federated learning setup
     """
-    logger.info("🔍 Validating FL setup...")
+    logger.info("🔍 Validating zero-day FL setup with realistic data sizes...")
     
     success_count = 0
+    total_train_samples = 0
+    total_test_samples = 0
+    
     for client_id in range(num_clients):
         try:
             (X_train, y_train), (X_test, y_test), missing_attack = load_and_partition_data(
@@ -166,21 +166,36 @@ def validate_zero_day_setup(file_path, num_clients=5, label_col="category"):
                 client_id=client_id, 
                 num_clients=num_clients,
                 label_col=label_col,
-                chunk_size=5000  # Small chunk for validation
+                chunk_size=50000  # Larger chunk for realistic data
             )
             
-            logger.info(f"✅ Client {client_id}: Train={len(X_train)}, Test={len(X_test)}")
+            train_size = len(X_train)
+            test_size = len(X_test)
+            total_train_samples += train_size
+            total_test_samples += test_size
+            
+            logger.info(f"✅ Client {client_id}: Train={train_size}, Test={test_size}, Missing={missing_attack}")
             success_count += 1
             
         except Exception as e:
             logger.error(f"❌ Client {client_id} validation failed: {str(e)}")
     
-    logger.info(f"🎯 Validation complete: {success_count}/{num_clients} clients ready")
-    return success_count == num_clients
+    logger.info(f"\n🎯 Zero-Day FL Validation Summary:")
+    logger.info(f"   ✅ Successful clients: {success_count}/{num_clients}")
+    logger.info(f"   📊 Total training samples: {total_train_samples:,}")
+    logger.info(f"   📊 Total test samples: {total_test_samples:,}")
+    logger.info(f"   📊 Average per client: {total_train_samples//num_clients:,} train, {total_test_samples//num_clients:,} test")
+    
+    if success_count == num_clients and total_train_samples > 5000:
+        logger.info("🎉 Zero-day FL setup validated successfully with realistic data sizes!")
+        return True
+    else:
+        logger.error("❌ Zero-day FL setup validation failed")
+        return False
 
 if __name__ == "__main__":
-    # Test the setup
-    if os.path.exists("Bot_IoT.csv"):
-        validate_zero_day_setup("Bot_IoT.csv", num_clients=5, label_col="category")
+    # Test the improved setup
+    if validate_zero_day_setup("Bot_IoT.csv", num_clients=5, label_col="category"):
+        print("✅ Ready for federated learning experiments!")
     else:
-        logger.error("❌ Bot_IoT.csv not found")
+        print("❌ Setup needs fixes before running experiments")

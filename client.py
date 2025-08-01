@@ -20,23 +20,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# FIXED: More conservative settings
+# FIXED: More realistic settings
 CLIENT_ID = int(os.environ.get("CLIENT_ID", 0))
 SERVER_ADDRESS = os.environ.get("SERVER_ADDRESS", "localhost:8080")
 NUM_CLIENTS = 5
-BATCH_SIZE = 8  # FIXED: Reduced from 16 to prevent memory issues
+BATCH_SIZE = 32  # Increased for better training
 EPOCHS = 1
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 logger.info(f"🚀 FIXED Client {CLIENT_ID} starting on {DEVICE}")
 logger.info(f"📡 Server: {SERVER_ADDRESS}")
 
-def wait_for_server(server_address, max_attempts=60):  # FIXED: Longer wait time
-    """FIXED: Better server waiting with more attempts"""
+def wait_for_server(server_address, max_attempts=60):
+    """Wait for server to be ready"""
     host, port = server_address.split(':')
     port = int(port)
     
-    logger.info(f"⏳ Waiting for server at {host}:{port} (max {max_attempts}s)...")
+    logger.info(f"⏳ Waiting for server at {host}:{port}...")
     
     for attempt in range(max_attempts):
         try:
@@ -45,7 +45,7 @@ def wait_for_server(server_address, max_attempts=60):  # FIXED: Longer wait time
                 result = s.connect_ex((host, port))
                 if result == 0:
                     logger.info(f"✅ Server ready at {host}:{port}")
-                    time.sleep(2)  # FIXED: Additional wait for server stability
+                    time.sleep(2)
                     return True
         except Exception as e:
             logger.debug(f"Connection attempt {attempt + 1}: {e}")
@@ -59,7 +59,7 @@ def wait_for_server(server_address, max_attempts=60):  # FIXED: Longer wait time
     return False
 
 class FixedFlowerClient(fl.client.NumPyClient):
-    """FIXED: Much more robust Flower client"""
+    """FIXED: Flower client with proper zero-day detection"""
     
     def __init__(self, model, train_loader, test_loader, device, client_id, missing_attack):
         self.model = model.to(device)
@@ -69,7 +69,11 @@ class FixedFlowerClient(fl.client.NumPyClient):
         self.client_id = client_id
         self.missing_attack = missing_attack
         
-        # FIXED: Validate data loaders
+        # Create label mapping for zero-day detection
+        self.attack_types = ['Normal', 'DDoS', 'DoS', 'Reconnaissance', 'Theft']
+        self.missing_attack_id = self.attack_types.index(missing_attack) if missing_attack in self.attack_types else 0
+        
+        # Validate data loaders
         if len(train_loader.dataset) == 0:
             raise ValueError(f"Client {client_id} has empty training dataset")
         if len(test_loader.dataset) == 0:
@@ -77,19 +81,18 @@ class FixedFlowerClient(fl.client.NumPyClient):
         
         logger.info(f"✅ FIXED Client {client_id} initialized")
         logger.info(f"📊 Train: {len(train_loader.dataset)}, Test: {len(test_loader.dataset)}")
-        logger.info(f"🎯 Missing attack: {missing_attack}")
+        logger.info(f"🎯 Missing attack: {missing_attack} (ID: {self.missing_attack_id})")
 
     def get_parameters(self, config):
-        """FIXED: Safer parameter extraction"""
+        """Get model parameters"""
         try:
             return [val.cpu().numpy() for val in self.model.state_dict().values()]
         except Exception as e:
             logger.error(f"Client {self.client_id}: Parameter extraction failed: {e}")
-            # Return dummy parameters to prevent crash
             return [np.array([0.0])]
 
     def set_parameters(self, parameters):
-        """FIXED: Safer parameter setting"""
+        """Set model parameters"""
         try:
             if len(parameters) != len(self.model.state_dict()):
                 logger.warning(f"Parameter count mismatch: got {len(parameters)}, expected {len(self.model.state_dict())}")
@@ -97,18 +100,18 @@ class FixedFlowerClient(fl.client.NumPyClient):
             
             params_dict = zip(self.model.state_dict().keys(), parameters)
             state_dict = OrderedDict({k: torch.tensor(v) for k, v in params_dict})
-            self.model.load_state_dict(state_dict, strict=False)  # FIXED: strict=False
+            self.model.load_state_dict(state_dict, strict=False)
             
         except Exception as e:
             logger.error(f"Client {self.client_id}: Parameter setting failed: {e}")
 
     def fit(self, parameters, config):
-        """FIXED: Much more robust training"""
+        """FIXED: Enhanced training with realistic batch processing"""
         server_round = config.get('server_round', 'unknown')
         logger.info(f"🎯 Client {self.client_id} - Training Round {server_round}")
         
-        # FIXED: Early exit for insufficient data
-        if len(self.train_loader.dataset) < 10:
+        # Check for sufficient data
+        if len(self.train_loader.dataset) < 50:
             logger.warning(f"⚠️ Client {self.client_id}: Insufficient data ({len(self.train_loader.dataset)} samples)")
             return self.get_parameters(config), 0, {
                 "loss": 0.0,
@@ -120,20 +123,21 @@ class FixedFlowerClient(fl.client.NumPyClient):
             self.set_parameters(parameters)
             self.model.train()
             
-            # FIXED: Conservative optimizer settings
+            # FIXED: Better optimizer settings
             optimizer = torch.optim.Adam(
                 self.model.parameters(), 
-                lr=config.get('learning_rate', 0.0001),  # FIXED: Lower learning rate
-                weight_decay=1e-5
+                lr=config.get('learning_rate', 0.001),
+                weight_decay=1e-4
             )
             criterion = nn.CrossEntropyLoss()
             
             total_loss = 0.0
             total_samples = 0
             successful_batches = 0
+            correct_predictions = 0
             
-            # FIXED: Limit training to prevent long runs
-            max_batches = min(5, len(self.train_loader))  # Maximum 5 batches
+            # Process all batches (or reasonable subset)
+            max_batches = min(50, len(self.train_loader))  # Process up to 50 batches
             
             for epoch in range(EPOCHS):
                 for batch_idx, (data, target) in enumerate(self.train_loader):
@@ -143,7 +147,7 @@ class FixedFlowerClient(fl.client.NumPyClient):
                     try:
                         data, target = data.to(self.device), target.to(self.device)
                         
-                        # FIXED: Skip invalid data
+                        # Skip invalid data
                         if torch.isnan(data).any() or torch.isinf(data).any():
                             logger.debug(f"Skipping batch {batch_idx} due to invalid data")
                             continue
@@ -152,35 +156,38 @@ class FixedFlowerClient(fl.client.NumPyClient):
                         output = self.model(data)
                         loss = criterion(output, target)
                         
-                        # FIXED: Skip invalid loss
+                        # Skip invalid loss
                         if torch.isnan(loss) or torch.isinf(loss):
                             logger.debug(f"Skipping batch {batch_idx} due to invalid loss")
                             continue
                         
                         loss.backward()
-                        
-                        # FIXED: Gradient clipping
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
-                        
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                         optimizer.step()
                         
+                        # Calculate metrics
                         total_loss += loss.item()
                         total_samples += data.size(0)
                         successful_batches += 1
+                        
+                        # Calculate training accuracy
+                        pred = output.argmax(dim=1, keepdim=True)
+                        correct_predictions += pred.eq(target.view_as(pred)).sum().item()
                         
                     except Exception as e:
                         logger.debug(f"Batch {batch_idx} failed: {e}")
                         continue
             
-            # FIXED: Calculate metrics safely
+            # Calculate final metrics
             avg_loss = total_loss / max(successful_batches, 1)
+            accuracy = correct_predictions / max(total_samples, 1)
             
             logger.info(f"✅ Client {self.client_id} training complete - "
-                       f"Loss: {avg_loss:.4f}, Batches: {successful_batches}")
+                       f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}, Batches: {successful_batches}")
             
             return self.get_parameters(config), total_samples, {
                 "loss": float(avg_loss),
-                "accuracy": 0.0,  # FIXED: Don't calculate during training to save time
+                "accuracy": float(accuracy),
                 "batches_processed": successful_batches,
                 "missing_attack": self.missing_attack
             }
@@ -195,10 +202,10 @@ class FixedFlowerClient(fl.client.NumPyClient):
             }
 
     def evaluate(self, parameters, config):
-        """FIXED: Much more robust evaluation"""
-        logger.info(f"📊 Client {self.client_id} - Evaluation")
+        """FIXED: Enhanced evaluation with proper zero-day detection metrics"""
+        logger.info(f"📊 Client {self.client_id} - Evaluation with Zero-Day Detection")
         
-        # FIXED: Skip evaluation if no test data
+        # Skip evaluation if no test data
         if len(self.test_loader.dataset) == 0:
             logger.warning(f"⚠️ Client {self.client_id}: No test data")
             return 0.0, 0, {
@@ -215,26 +222,26 @@ class FixedFlowerClient(fl.client.NumPyClient):
             test_loss = 0.0
             correct = 0
             total = 0
-            processed_batches = 0
             
-            # FIXED: Limit evaluation batches
-            max_eval_batches = min(3, len(self.test_loader))
+            # FIXED: Zero-day detection metrics
+            zero_day_tp = 0  # True positives for missing attack
+            zero_day_fp = 0  # False positives for missing attack  
+            zero_day_tn = 0  # True negatives for missing attack
+            zero_day_fn = 0  # False negatives for missing attack
+            zero_day_total = 0  # Total missing attack samples
             
             with torch.no_grad():
                 for batch_idx, (data, target) in enumerate(self.test_loader):
-                    if batch_idx >= max_eval_batches:
-                        break
-                    
                     try:
                         data, target = data.to(self.device), target.to(self.device)
                         
-                        # FIXED: Skip invalid data
+                        # Skip invalid data
                         if torch.isnan(data).any() or torch.isinf(data).any():
                             continue
                         
                         output = self.model(data)
                         
-                        # FIXED: Skip invalid output
+                        # Skip invalid output
                         if torch.isnan(output).any() or torch.isinf(output).any():
                             continue
                         
@@ -246,23 +253,61 @@ class FixedFlowerClient(fl.client.NumPyClient):
                         pred = output.argmax(dim=1, keepdim=True)
                         correct += pred.eq(target.view_as(pred)).sum().item()
                         total += target.size(0)
-                        processed_batches += 1
+                        
+                        # FIXED: Calculate zero-day detection metrics
+                        for i in range(len(target)):
+                            true_label = target[i].item()
+                            pred_label = pred[i].item()
+                            
+                            if true_label == self.missing_attack_id:
+                                # This is a zero-day attack sample
+                                zero_day_total += 1
+                                if pred_label == self.missing_attack_id:
+                                    zero_day_tp += 1  # Correctly detected zero-day
+                                else:
+                                    zero_day_fn += 1  # Missed zero-day attack
+                            else:
+                                # This is not a zero-day attack
+                                if pred_label == self.missing_attack_id:
+                                    zero_day_fp += 1  # False alarm
+                                else:
+                                    zero_day_tn += 1  # Correctly identified as not zero-day
                         
                     except Exception as e:
                         logger.debug(f"Evaluation batch {batch_idx} failed: {e}")
                         continue
             
-            # FIXED: Calculate metrics safely
+            # Calculate overall metrics
             accuracy = correct / max(total, 1)
-            avg_loss = test_loss / max(processed_batches, 1)
+            avg_loss = test_loss / max(total, 1)
             
-            logger.info(f"✅ Client {self.client_id} evaluation complete - "
-                       f"Acc: {accuracy:.4f}, Loss: {avg_loss:.4f}")
+            # FIXED: Calculate zero-day detection metrics
+            zero_day_precision = zero_day_tp / max(zero_day_tp + zero_day_fp, 1)
+            zero_day_recall = zero_day_tp / max(zero_day_tp + zero_day_fn, 1)
+            zero_day_f1 = 2 * (zero_day_precision * zero_day_recall) / max(zero_day_precision + zero_day_recall, 1)
+            zero_day_detection_rate = zero_day_tp / max(zero_day_total, 1)
+            
+            # False positive rate for zero-day
+            zero_day_fpr = zero_day_fp / max(zero_day_fp + zero_day_tn, 1)
+            
+            logger.info(f"✅ Client {self.client_id} evaluation complete:")
+            logger.info(f"   Overall Accuracy: {accuracy:.4f}, Loss: {avg_loss:.4f}")
+            logger.info(f"   Zero-day samples: {zero_day_total}")
+            logger.info(f"   Zero-day detection rate: {zero_day_detection_rate:.4f}")
+            logger.info(f"   Zero-day precision: {zero_day_precision:.4f}")
+            logger.info(f"   Zero-day recall: {zero_day_recall:.4f}")
+            logger.info(f"   Zero-day F1-score: {zero_day_f1:.4f}")
             
             return float(avg_loss), total, {
                 "accuracy": float(accuracy),
                 "missing_attack": self.missing_attack,
-                "batches_processed": processed_batches
+                "zero_day_detection_rate": float(zero_day_detection_rate),
+                "zero_day_precision": float(zero_day_precision),
+                "zero_day_recall": float(zero_day_recall),
+                "zero_day_f1_score": float(zero_day_f1),
+                "zero_day_false_positive_rate": float(zero_day_fpr),
+                "zero_day_samples": zero_day_total,
+                "total_samples": total
             }
             
         except Exception as e:
@@ -274,110 +319,85 @@ class FixedFlowerClient(fl.client.NumPyClient):
             }
 
 def main():
-    """FIXED: Much more robust main function"""
+    """FIXED: Main function with realistic data loading"""
     try:
         logger.info(f"🌟 Starting FIXED FL Client {CLIENT_ID}")
         
-        # FIXED: Wait for server first
+        # Wait for server first
         if not wait_for_server(SERVER_ADDRESS, max_attempts=90):
             logger.error("❌ Server not available, exiting")
             return False
         
-        # FIXED: Load data with retries
-        max_data_retries = 3
-        for attempt in range(max_data_retries):
-            try:
-                logger.info(f"📂 Loading data (attempt {attempt + 1}/{max_data_retries})")
-                
-                (X_train, y_train), (X_test, y_test), missing_attack = load_and_partition_data(
-                    file_path="Bot_IoT.csv",
-                    client_id=CLIENT_ID,
-                    num_clients=NUM_CLIENTS,
-                    label_col="category",
-                    chunk_size=5000  # FIXED: Smaller chunk size
-                )
-                
-                logger.info(f"✅ Data loaded: Train={len(X_train)}, Test={len(X_test)}")
-                break
-                
-            except Exception as e:
-                logger.error(f"❌ Data loading attempt {attempt + 1} failed: {e}")
-                if attempt < max_data_retries - 1:
-                    time.sleep(5)
-                else:
-                    logger.error("❌ All data loading attempts failed")
-                    return False
+        # FIXED: Load data with realistic chunk size
+        logger.info(f"📂 Loading realistic dataset for client {CLIENT_ID}")
         
-        # FIXED: Validate data
-        if len(X_train) < 10:
+        (X_train, y_train), (X_test, y_test), missing_attack = load_and_partition_data(
+            file_path="Bot_IoT.csv",
+            client_id=CLIENT_ID,
+            num_clients=NUM_CLIENTS,
+            label_col="category",
+            chunk_size=50000  # Much larger chunk for realistic training
+        )
+        
+        logger.info(f"✅ Data loaded: Train={len(X_train)}, Test={len(X_test)}")
+        
+        # Validate data sizes
+        if len(X_train) < 100:
             logger.error(f"❌ Insufficient training data: {len(X_train)} samples")
             return False
         
-        # FIXED: Create datasets with safe batch sizes
+        # Create datasets with realistic batch sizes
         train_dataset = TensorDataset(X_train, y_train)
         test_dataset = TensorDataset(X_test, y_test)
         
-        # FIXED: Safe batch sizes
-        train_batch_size = min(BATCH_SIZE, len(train_dataset), 8)
-        test_batch_size = min(BATCH_SIZE, max(1, len(test_dataset)), 8)
+        # FIXED: Realistic batch sizes
+        train_batch_size = min(BATCH_SIZE, len(train_dataset))
+        test_batch_size = min(BATCH_SIZE, max(1, len(test_dataset)))
         
         train_loader = DataLoader(
             train_dataset, 
             batch_size=train_batch_size, 
             shuffle=True, 
             drop_last=False,
-            num_workers=0  # FIXED: No multiprocessing
+            num_workers=0
         )
         test_loader = DataLoader(
             test_dataset, 
             batch_size=test_batch_size, 
             shuffle=False, 
             drop_last=False,
-            num_workers=0  # FIXED: No multiprocessing
+            num_workers=0
         )
         
-        # FIXED: Create model
+        # Create model with proper input size
         num_features = X_train.shape[1]
         num_classes = 5  # Bot-IoT classes
         
         model = Net(
             input_size=num_features, 
             output_size=num_classes,
-            hidden_size=32,  # FIXED: Smaller model
-            num_hidden_layers=2,  # FIXED: Fewer layers
-            dropout_rate=0.2  # FIXED: Less dropout
+            hidden_size=64,  # Better model capacity
+            num_hidden_layers=3,
+            dropout_rate=0.3
         )
         
         logger.info(f"🧠 Model: {num_features} → {num_classes} classes")
         
-        # FIXED: Create client
+        # Create client
         client = FixedFlowerClient(
             model, train_loader, test_loader, DEVICE, CLIENT_ID, missing_attack
         )
         
-        # FIXED: Connect with retries
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"🔗 Connecting to server (attempt {attempt + 1}/{max_retries})")
-                
-                fl.client.start_numpy_client(
-                    server_address=SERVER_ADDRESS, 
-                    client=client
-                )
-                
-                logger.info(f"✅ Client {CLIENT_ID} completed successfully!")
-                return True
-                
-            except Exception as e:
-                logger.error(f"❌ Connection attempt {attempt + 1} failed: {e}")
-                if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 10
-                    logger.info(f"⏳ Waiting {wait_time}s before retry...")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"❌ All connection attempts failed")
-                    return False
+        # Connect to server
+        logger.info(f"🔗 Connecting to server at {SERVER_ADDRESS}")
+        
+        fl.client.start_numpy_client(
+            server_address=SERVER_ADDRESS, 
+            client=client
+        )
+        
+        logger.info(f"✅ Client {CLIENT_ID} completed successfully!")
+        return True
         
     except Exception as e:
         logger.error(f"❌ Client {CLIENT_ID} failed: {str(e)}")

@@ -1,0 +1,41 @@
+{
+  "algorithm": "FedAvg",
+  "experiment_id": "20250801_030034_FedAvg",
+  "completion_time": "2025-08-01T03:01:51.677868",
+  "experiment_directory": "complete_research_results/experiments/FedAvg_20250801_030034_FedAvg",
+  "collected_files": [
+    "experiment_summary.json",
+    "experiment_summary.json",
+    "experiment_summary.json",
+    "experiment_summary.json",
+    "experiment_series_summary.json",
+    "FedProx_experiment_summary.json",
+    "AsyncFL_detailed_analysis.json",
+    "experiment_summary.json",
+    "FedAvg_experiment_summary.json",
+    "AsyncFL_experiment_summary.json",
+    "FedProx_experiment_summary.json",
+    "experiment_summary.json",
+    "FedAvg_experiment_summary.json",
+    "FedAvg_detailed_analysis.json",
+    "experiment_summary.json",
+    "FedAvg_experiment_summary.json",
+    "experiment_summary.json",
+    "experiment_summary.json",
+    "experiment_summary.json",
+    "experiment_summary.json"
+  ],
+  "files_count": 20,
+  "research_metadata": {
+    "title": "Optimising Federated Learning Algorithms for Zero-Day Botnet Attack Detection and Mitigation in IoT-Edge Environments",
+    "institution": "University of Lincoln",
+    "department": "School of Computer Science"
+  },
+  "experiment_parameters": {
+    "num_clients": 5,
+    "num_rounds": 10,
+    "zero_day_simulation": true,
+    "dataset": "Bot-IoT (subset)"
+  },
+  "status": "completed_with_results"
+}
