@@ -3,8 +3,8 @@
     "title": "Optimising Federated Learning Algorithms for Zero-Day Botnet Attack Detection and Mitigation in IoT-Edge Environments",
     "institution": "University of Lincoln",
     "department": "School of Computer Science",
-    "completion_timestamp": "2025-08-02T02:08:59.922073",
-    "experiment_series_id": "20250802_020416",
+    "completion_timestamp": "2025-08-04T12:11:36.249201",
+    "experiment_series_id": "20250804_115504",
     "pipeline_version": "enhanced_v2",
     "total_duration_estimated": "3-4 hours",
     "researcher_notes": "Enhanced pipeline with improved monitoring and error handling"

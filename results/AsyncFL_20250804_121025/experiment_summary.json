@@ -1,0 +1,238 @@
+{
+  "algorithm": "AsyncFL",
+  "experiment_id": "AsyncFL_20250804_121025",
+  "total_rounds": 10,
+  "total_time": 66.37719988822937,
+  "final_accuracy": 0.2016,
+  "final_loss": 0.054005132615566255,
+  "total_communication_bytes": 19831958,
+  "avg_communication_time": 5.320324993133545,
+  "final_zero_day_detection": 0.19787206195511947,
+  "avg_zero_day_detection": 0.18595745566563215,
+  "training_history": [
+    {
+      "round": 1,
+      "loss": 4.3920650291442875,
+      "num_clients": 2,
+      "total_examples": 3200,
+      "timestamp": "2025-08-04T12:10:41.243099"
+    },
+    {
+      "round": 2,
+      "loss": 3.782167510986328,
+      "num_clients": 2,
+      "total_examples": 3200,
+      "timestamp": "2025-08-04T12:10:46.387702"
+    },
+    {
+      "round": 3,
+      "loss": 3.511135161717733,
+      "num_clients": 3,
+      "total_examples": 4800,
+      "timestamp": "2025-08-04T12:10:52.886503"
+    },
+    {
+      "round": 4,
+      "loss": 3.220828348000844,
+      "num_clients": 3,
+      "total_examples": 4800,
+      "timestamp": "2025-08-04T12:10:58.189227"
+    },
+    {
+      "round": 5,
+      "loss": 3.0053147999445597,
+      "num_clients": 3,
+      "total_examples": 4800,
+      "timestamp": "2025-08-04T12:11:03.496430"
+    },
+    {
+      "round": 6,
+      "loss": 2.879627561569214,
+      "num_clients": 3,
+      "total_examples": 4800,
+      "timestamp": "2025-08-04T12:11:08.805597"
+    },
+    {
+      "round": 7,
+      "loss": 2.7616464694341025,
+      "num_clients": 3,
+      "total_examples": 4800,
+      "timestamp": "2025-08-04T12:11:14.796090"
+    },
+    {
+      "round": 8,
+      "loss": 2.594122668107351,
+      "num_clients": 3,
+      "total_examples": 4800,
+      "timestamp": "2025-08-04T12:11:20.299214"
+    },
+    {
+      "round": 9,
+      "loss": 2.5081723793347677,
+      "num_clients": 3,
+      "total_examples": 4800,
+      "timestamp": "2025-08-04T12:11:25.772516"
+    },
+    {
+      "round": 10,
+      "loss": 2.413526175816854,
+      "num_clients": 3,
+      "total_examples": 4800,
+      "timestamp": "2025-08-04T12:11:31.465285"
+    }
+  ],
+  "evaluation_history": [
+    {
+      "round": 1,
+      "loss": 0.06462280452251434,
+      "accuracy": 0.195,
+      "num_clients": 4,
+      "zero_day_detection": 0.18044445380180568,
+      "timestamp": "2025-08-04T12:10:41.939665"
+    },
+    {
+      "round": 2,
+      "loss": 0.06105090603232384,
+      "accuracy": 0.1948,
+      "num_clients": 5,
+      "zero_day_detection": 0.17079094925274452,
+      "timestamp": "2025-08-04T12:10:47.150262"
+    },
+    {
+      "round": 3,
+      "loss": 0.05911764651536942,
+      "accuracy": 0.196,
+      "num_clients": 5,
+      "zero_day_detection": 0.1728621354141973,
+      "timestamp": "2025-08-04T12:10:53.651558"
+    },
+    {
+      "round": 4,
+      "loss": 0.05772065967321396,
+      "accuracy": 0.1912,
+      "num_clients": 5,
+      "zero_day_detection": 0.18343355928132268,
+      "timestamp": "2025-08-04T12:10:58.970664"
+    },
+    {
+      "round": 5,
+      "loss": 0.05696606040000916,
+      "accuracy": 0.1908,
+      "num_clients": 5,
+      "zero_day_detection": 0.17283344562166814,
+      "timestamp": "2025-08-04T12:11:04.160731"
+    },
+    {
+      "round": 6,
+      "loss": 0.05587447062134743,
+      "accuracy": 0.198,
+      "num_clients": 5,
+      "zero_day_detection": 0.18854062783814762,
+      "timestamp": "2025-08-04T12:11:09.640192"
+    },
+    {
+      "round": 7,
+      "loss": 0.05530347973108292,
+      "accuracy": 0.2044,
+      "num_clients": 5,
+      "zero_day_detection": 0.20184578500891695,
+      "timestamp": "2025-08-04T12:11:15.505656"
+    },
+    {
+      "round": 8,
+      "loss": 0.05487145110964775,
+      "accuracy": 0.2032,
+      "num_clients": 5,
+      "zero_day_detection": 0.20207794882788135,
+      "timestamp": "2025-08-04T12:11:21.065423"
+    },
+    {
+      "round": 9,
+      "loss": 0.054316402226686475,
+      "accuracy": 0.1912,
+      "num_clients": 5,
+      "zero_day_detection": 0.1888735896545178,
+      "timestamp": "2025-08-04T12:11:26.493437"
+    },
+    {
+      "round": 10,
+      "loss": 0.054005132615566255,
+      "accuracy": 0.2016,
+      "num_clients": 5,
+      "zero_day_detection": 0.19787206195511947,
+      "timestamp": "2025-08-04T12:11:32.157577"
+    }
+  ],
+  "communication_metrics": [
+    {
+      "round": 1,
+      "bytes_transmitted": 1415862,
+      "communication_time": 9.689075708389282,
+      "num_clients": 2,
+      "timestamp": "2025-08-04T12:10:41.242884"
+    },
+    {
+      "round": 2,
+      "bytes_transmitted": 1417158,
+      "communication_time": 4.447177886962891,
+      "num_clients": 2,
+      "timestamp": "2025-08-04T12:10:46.387526"
+    },
+    {
+      "round": 3,
+      "bytes_transmitted": 2123238,
+      "communication_time": 5.735206127166748,
+      "num_clients": 3,
+      "timestamp": "2025-08-04T12:10:52.886310"
+    },
+    {
+      "round": 4,
+      "bytes_transmitted": 2127830,
+      "communication_time": 4.537050485610962,
+      "num_clients": 3,
+      "timestamp": "2025-08-04T12:10:58.189086"
+    },
+    {
+      "round": 5,
+      "bytes_transmitted": 2125000,
+      "communication_time": 4.524915933609009,
+      "num_clients": 3,
+      "timestamp": "2025-08-04T12:11:03.496281"
+    },
+    {
+      "round": 6,
+      "bytes_transmitted": 2124300,
+      "communication_time": 4.644146203994751,
+      "num_clients": 3,
+      "timestamp": "2025-08-04T12:11:08.805416"
+    },
+    {
+      "round": 7,
+      "bytes_transmitted": 2125214,
+      "communication_time": 5.1550984382629395,
+      "num_clients": 3,
+      "timestamp": "2025-08-04T12:11:14.795872"
+    },
+    {
+      "round": 8,
+      "bytes_transmitted": 2124950,
+      "communication_time": 4.792933464050293,
+      "num_clients": 3,
+      "timestamp": "2025-08-04T12:11:20.299030"
+    },
+    {
+      "round": 9,
+      "bytes_transmitted": 2123822,
+      "communication_time": 4.7064526081085205,
+      "num_clients": 3,
+      "timestamp": "2025-08-04T12:11:25.772327"
+    },
+    {
+      "round": 10,
+      "bytes_transmitted": 2124584,
+      "communication_time": 4.971193075180054,
+      "num_clients": 3,
+      "timestamp": "2025-08-04T12:11:31.465122"
+    }
+  ]
+}

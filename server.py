@@ -281,7 +281,7 @@ class CustomStrategy(fl.server.strategy.FedAvg):
     
     def aggregate_evaluate(self, server_round: int, results: List[Tuple[fl.server.client_proxy.ClientProxy, fl.common.EvaluateRes]],
                           failures: List[Union[Tuple[fl.server.client_proxy.ClientProxy, fl.common.EvaluateRes], BaseException]]) -> Tuple[Optional[float], Dict[str, Scalar]]:
-        """FIXED: Aggregate evaluation results with enhanced zero-day metrics"""
+        """FIXED: Aggregate evaluation results with enhanced zero-day tracking"""
         if not results:
             logger.warning(f"No evaluation results in round {server_round}")
             return None, {}
@@ -323,10 +323,14 @@ class CustomStrategy(fl.server.strategy.FedAvg):
         avg_accuracy = total_accuracy / total_examples if total_examples > 0 else 0.0
         
         # Calculate zero-day detection metrics
+        avg_zero_day_rate = 0.0
         avg_zero_day_metrics = {}
         for key, values in zero_day_metrics.items():
             if values:
-                avg_zero_day_metrics[key] = sum(values) / total_examples
+                avg_val = sum(values) / total_examples
+                avg_zero_day_metrics[key] = avg_val
+                if key == "zero_day_detection_rate":
+                    avg_zero_day_rate = avg_val
         
         # Calculate other algorithm metrics
         avg_algorithm_metrics = {}
@@ -334,12 +338,9 @@ class CustomStrategy(fl.server.strategy.FedAvg):
             if values:
                 avg_algorithm_metrics[key] = sum(values) / total_examples
         
-        # FIXED: Extract zero-day detection rate properly
-        zero_day_detection_rate = avg_zero_day_metrics.get('zero_day_detection_rate', 0.0)
-        
-        # Log evaluation metrics with enhanced tracking
+        # FIXED: Log evaluation metrics with zero-day data
         self.results_tracker.log_evaluation_round(
-            server_round, avg_loss, avg_accuracy, len(results), zero_day_detection_rate
+            server_round, avg_loss, avg_accuracy, len(results), avg_zero_day_rate
         )
         
         # Display results
@@ -347,14 +348,8 @@ class CustomStrategy(fl.server.strategy.FedAvg):
         logger.info(f"{'='*60}")
         logger.info(f"Global Loss: {avg_loss:.4f}")
         logger.info(f"Global Accuracy: {avg_accuracy:.4f}")
-        logger.info(f"Zero-Day Detection Rate: {zero_day_detection_rate:.4f}")  # FIXED: Show zero-day performance
+        logger.info(f"Zero-day Detection Rate: {avg_zero_day_rate:.4f}")  # FIXED: Show zero-day performance
         logger.info(f"Clients evaluated: {len(results)}")
-        
-        # Log zero-day detection metrics
-        if avg_zero_day_metrics:
-            logger.info("Zero-day Detection Metrics:")
-            for key, value in avg_zero_day_metrics.items():
-                logger.info(f"  {key}: {value:.4f}")
         
         # Log algorithm-specific metrics
         if avg_algorithm_metrics:
@@ -368,7 +363,7 @@ class CustomStrategy(fl.server.strategy.FedAvg):
             "algorithm": self.algorithm_name,
             "num_clients": len(results),
             "total_examples": total_examples,
-            "zero_day_detection_rate": zero_day_detection_rate  # FIXED: Include zero-day rate
+            "zero_day_detection_rate": avg_zero_day_rate  # FIXED: Include zero-day rate
         }
         
         # Add zero-day metrics
@@ -397,7 +392,7 @@ def evaluate_config(server_round: int) -> Dict[str, Union[bool, bytes, float, in
     return config
 
 def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
-    """FIXED: Get strategy with enhanced results tracking"""
+    """Get strategy based on algorithm name with proper configuration"""
     
     # Create results tracker
     results_tracker = ResultsTracker(algorithm)
@@ -420,7 +415,7 @@ def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
             results_tracker=results_tracker,
             **strategy_params
         )
-        logger.info("🔧 Enhanced FedProx strategy created with proximal regularization")
+        logger.info("🔧 FedProx strategy created with proximal regularization")
     
     elif algorithm == "AsyncFL":
         # AsyncFL - for simulation, we'll use FedAvg with modified parameters
@@ -430,7 +425,7 @@ def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
             results_tracker=results_tracker,
             **strategy_params
         )
-        logger.info("⚡ Enhanced AsyncFL strategy created with asynchronous simulation")
+        logger.info("⚡ AsyncFL strategy created with asynchronous simulation")
     
     else:  # FedAvg
         strategy = CustomStrategy(
@@ -438,12 +433,12 @@ def get_strategy(algorithm: str) -> fl.server.strategy.Strategy:
             results_tracker=results_tracker,
             **strategy_params
         )
-        logger.info("📊 Enhanced FedAvg baseline strategy created")
+        logger.info("📊 FedAvg baseline strategy created")
     
     return strategy
 
 def main():
-    """FIXED: Main server function with enhanced error handling and metrics"""
+    """FIXED: Main server function with enhanced error handling and metric collection"""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Enhanced Federated Learning Server')
     parser.add_argument('--algorithm', type=str, default='FedAvg', 
@@ -466,8 +461,8 @@ def main():
     logger.info(f"Port: {args.port}")
     logger.info(f"Results Directory: {args.results_dir}")
     logger.info(f"Enhanced Metrics Collection: ✅ Enabled")
-    logger.info(f"Communication Tracking: ✅ Enabled")
-    logger.info(f"Zero-Day Detection Monitoring: ✅ Enabled")
+    logger.info(f"Communication Tracking: ✅ Enabled")  # FIXED
+    logger.info(f"Zero-day Detection Metrics: ✅ Enabled")  # FIXED
     logger.info(f"{'='*80}\n")
     
     # Get strategy with enhanced metrics handling
@@ -479,7 +474,7 @@ def main():
             server_address=f"0.0.0.0:{args.port}",
             config=fl.server.ServerConfig(
                 num_rounds=args.rounds,
-                round_timeout=240  # Increased timeout for stability
+                round_timeout=180  # Increased timeout for stability
             ),
             strategy=strategy,
         )
@@ -488,21 +483,19 @@ def main():
         if hasattr(strategy, 'results_tracker'):
             summary = strategy.results_tracker.save_final_summary()
             
-            # Display enhanced final results
+            # FIXED: Display comprehensive final results
             logger.info(f"\n{'='*80}")
             logger.info(f"🏁 EXPERIMENT COMPLETED - {args.algorithm}")
             logger.info(f"{'='*80}")
             logger.info(f"Final Accuracy: {summary['final_accuracy']:.4f}")
             logger.info(f"Final Loss: {summary['final_loss']:.4f}")
-            logger.info(f"Zero-Day Detection Rate: {summary['final_zero_day_detection']:.4f}")
+            logger.info(f"Zero-day Detection Rate: {summary['final_zero_day_detection']:.4f}")
             logger.info(f"Total Communication: {summary['total_communication_bytes']/1024:.1f} KB")
             logger.info(f"Avg Communication Time: {summary['avg_communication_time']:.2f}s")
             logger.info(f"Total Rounds: {summary['total_rounds']}")
             logger.info(f"Total Time: {summary['total_time']:.2f} seconds")
             logger.info(f"Results Directory: {strategy.results_tracker.results_dir}")
             logger.info(f"✅ Enhanced metrics collection completed successfully")
-            logger.info(f"📊 Communication metrics: ✅ Collected")
-            logger.info(f"🎯 Zero-day metrics: ✅ Collected")
             logger.info(f"{'='*80}\n")
         
     except Exception as e:
