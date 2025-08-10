@@ -13,6 +13,12 @@ import socket
 from model import Net
 from partition_data import load_and_partition_data
 
+# ---------------------------------------------------------------------
+# Class order MUST match server.py for confusion-matrix aggregation
+# ---------------------------------------------------------------------
+CLASSES = ["Normal", "DDoS", "DoS", "Reconnaissance", "Theft"]
+CLASS_TO_IDX = {c: i for i, c in enumerate(CLASSES)}
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -62,17 +68,6 @@ def wait_for_server(server_address, max_attempts=60):
 class EnhancedFlowerClient(fl.client.NumPyClient):
     """
     Enhanced Flower client with variable client support and fog integration
-    
-    Improvements:
-    - Adapts to variable client configurations (5, 10, 15 clients)
-    - Enhanced zero-day detection metrics for fog mitigation
-    - Better error handling and logging for research reproducibility
-    - Supports your Bot-IoT attack categories with proper threat reporting
-    
-    Based on:
-    - McMahan et al. (2017): FedAvg client updates
-    - Your dissertation: Zero-day botnet detection in IoT
-    - Chiang & Zhang (2016): Edge processing for IoT
     """
     
     def __init__(self, model, train_loader, test_loader, device, client_id, missing_attack):
@@ -83,8 +78,8 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         self.client_id = client_id
         self.missing_attack = missing_attack
         
-        # Create label mapping for zero-day detection
-        self.attack_types = ['Normal', 'DDoS', 'DoS', 'Reconnaissance', 'Theft']
+        # Use shared class order
+        self.attack_types = CLASSES
         self.missing_attack_id = self.attack_types.index(missing_attack) if missing_attack in self.attack_types else 0
         
         # Enhanced metrics tracking for research
@@ -128,11 +123,6 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
     def fit(self, parameters, config):
         """
         Enhanced training with variable client awareness and fog integration
-        
-        Improvements:
-        - Adapts training based on target_clients from server
-        - Enhanced metrics for scalability analysis
-        - Better convergence tracking for research evaluation
         """
         server_round = config.get('server_round', 'unknown')
         target_clients = config.get('target_clients', 5)
@@ -158,7 +148,6 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             self.model.train()
             
             # Enhanced optimizer settings based on client scale
-            # More clients = need more stable training (lower LR)
             base_lr = config.get('learning_rate', 0.001)
             scaled_lr = base_lr * (5.0 / max(target_clients, 5))  # Scale LR inversely with client count
             
@@ -263,11 +252,7 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
     def evaluate(self, parameters, config):
         """
         Enhanced evaluation with fog-ready threat detection and scalability metrics
-        
-        Improvements:
-        - Enhanced zero-day detection for fog mitigation integration
-        - Scalability-aware performance metrics
-        - Threat confidence scoring for fog layer
+        + confusion matrix & macro/micro Precision/Recall/F1 (NEW)
         """
         server_round = config.get('server_round', 'unknown')
         target_clients = config.get('target_clients', 5)
@@ -295,16 +280,20 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             correct = 0
             total = 0
             
-            # Enhanced zero-day detection metrics for fog integration
-            zero_day_tp = 0  # True positives for missing attack
-            zero_day_fp = 0  # False positives for missing attack  
-            zero_day_tn = 0  # True negatives for missing attack
-            zero_day_fn = 0  # False negatives for missing attack
-            zero_day_total = 0  # Total missing attack samples
+            # Enhanced zero-day metrics
+            zero_day_tp = 0
+            zero_day_fp = 0
+            zero_day_tn = 0
+            zero_day_fn = 0
+            zero_day_total = 0
             
-            # Threat confidence tracking for fog layer
+            # Threat confidence tracking
             threat_detections = []
             attack_confidence_scores = []
+
+            # For confusion matrix (NEW)
+            y_true_all = []
+            y_pred_all = []
             
             with torch.no_grad():
                 for batch_idx, (data, target) in enumerate(self.test_loader):
@@ -329,6 +318,10 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                         pred = output.argmax(dim=1, keepdim=True)
                         correct += pred.eq(target.view_as(pred)).sum().item()
                         total += target.size(0)
+
+                        # Track labels/preds for confusion matrix
+                        y_true_all.extend(target.detach().cpu().tolist())
+                        y_pred_all.extend(pred.view(-1).detach().cpu().tolist())
                         
                         # Enhanced zero-day detection with confidence scoring
                         softmax_output = torch.softmax(output, dim=1)
@@ -339,36 +332,73 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                             confidence = softmax_output[i][pred_label].item()
                             
                             if true_label == self.missing_attack_id:
-                                # This is a zero-day attack sample
                                 zero_day_total += 1
                                 if pred_label == self.missing_attack_id:
-                                    zero_day_tp += 1  # Correctly detected zero-day
+                                    zero_day_tp += 1
                                     threat_detections.append({
                                         'type': self.missing_attack,
                                         'confidence': confidence,
                                         'correct': True
                                     })
                                 else:
-                                    zero_day_fn += 1  # Missed zero-day attack
+                                    zero_day_fn += 1
                             else:
-                                # This is not a zero-day attack
                                 if pred_label == self.missing_attack_id:
-                                    zero_day_fp += 1  # False alarm
+                                    zero_day_fp += 1
                                     threat_detections.append({
                                         'type': self.missing_attack,
                                         'confidence': confidence,
                                         'correct': False
                                     })
                                 else:
-                                    zero_day_tn += 1  # Correctly identified as not zero-day
+                                    zero_day_tn += 1
                             
-                            # Track attack confidence for all predictions
                             attack_confidence_scores.append(confidence)
                         
                     except Exception as e:
                         logger.debug(f"Evaluation batch {batch_idx} failed: {e}")
                         continue
             
+            # ---- Build confusion matrix (NEW, no sklearn required) ----
+            num_classes = len(CLASSES)
+            cm = np.zeros((num_classes, num_classes), dtype=np.int64)
+            for t, p in zip(y_true_all, y_pred_all):
+                if 0 <= t < num_classes and 0 <= p < num_classes:
+                    cm[t, p] += 1
+
+            total_cm = int(cm.sum())
+            per_class_counts = {}
+            for idx, cls in enumerate(CLASSES):
+                tp = int(cm[idx, idx])
+                fp = int(cm[:, idx].sum() - tp)
+                fn = int(cm[idx, :].sum() - tp)
+                tn = int(total_cm - tp - fp - fn)
+                per_class_counts[cls] = {"tp": tp, "fp": fp, "fn": fn, "tn": tn}
+
+            # ---- Macro/Micro Precision/Recall/F1 (NEW) ----
+            def safe_div(a, b): return (a / b) if b else 0.0
+            def prf_from_counts(tp, fp, fn):
+                prec = safe_div(tp, tp + fp)
+                rec  = safe_div(tp, tp + fn)
+                f1   = safe_div(2 * prec * rec, (prec + rec)) if (prec + rec) else 0.0
+                return prec, rec, f1
+
+            macro_p_list, macro_r_list, macro_f1_list = [], [], []
+            tot_tp = tot_fp = tot_fn = 0
+            for cls in CLASSES:
+                tp = per_class_counts[cls]["tp"]
+                fp = per_class_counts[cls]["fp"]
+                fn = per_class_counts[cls]["fn"]
+                p, r, f1 = prf_from_counts(tp, fp, fn)
+                macro_p_list.append(p); macro_r_list.append(r); macro_f1_list.append(f1)
+                tot_tp += tp; tot_fp += fp; tot_fn += fn
+
+            macro_precision = float(np.mean(macro_p_list)) if macro_p_list else 0.0
+            macro_recall    = float(np.mean(macro_r_list)) if macro_r_list else 0.0
+            macro_f1        = float(np.mean(macro_f1_list)) if macro_f1_list else 0.0
+
+            micro_precision, micro_recall, micro_f1 = prf_from_counts(tot_tp, tot_fp, tot_fn)
+
             evaluation_time = time.time() - evaluation_start_time
             
             # Calculate overall metrics
@@ -380,8 +410,6 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             zero_day_recall = zero_day_tp / max(zero_day_tp + zero_day_fn, 1)
             zero_day_f1 = 2 * (zero_day_precision * zero_day_recall) / max(zero_day_precision + zero_day_recall, 1)
             zero_day_detection_rate = zero_day_tp / max(zero_day_total, 1)
-            
-            # False positive rate for zero-day
             zero_day_fpr = zero_day_fp / max(zero_day_fp + zero_day_tn, 1)
             
             # Enhanced threat analysis for fog integration
@@ -392,11 +420,14 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
             scalability_factor = self._calculate_scalability_impact(target_clients, accuracy, zero_day_detection_rate)
             
             logger.info(f"✅ Client {self.client_id} evaluation complete:")
-            logger.info(f"   Overall Accuracy: {accuracy:.4f}, Loss: {avg_loss:.4f}")
+            logger.info(f"   Overall Accuracy: {accuracy:.4f}, Loss: {avg_loss:.6f}")
             logger.info(f"   Zero-day samples: {zero_day_total}")
             logger.info(f"   Zero-day detection rate: {zero_day_detection_rate:.4f}")
             logger.info(f"   Threat confidence: {avg_threat_confidence:.4f}")
             logger.info(f"   Scalability factor: {scalability_factor:.4f}")
+            logger.info(f"🔢 Confusion (sum={total_cm}): diag={int(np.diag(cm).sum())} classes={CLASSES}")
+            logger.info(f"📏 Macro: P={macro_precision:.3f} R={macro_recall:.3f} F1={macro_f1:.3f} | "
+                        f"Micro: P={micro_precision:.3f} R={micro_recall:.3f} F1={micro_f1:.3f}")
             
             # Store detection history for research analysis
             self.threat_detection_history.append({
@@ -406,7 +437,8 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                 'target_clients': target_clients
             })
             
-            return float(avg_loss), total, {
+            # Build metrics payload
+            metrics = {
                 "accuracy": float(accuracy),
                 "missing_attack": self.missing_attack,
                 
@@ -416,23 +448,40 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
                 "zero_day_recall": float(zero_day_recall),
                 "zero_day_f1_score": float(zero_day_f1),
                 "zero_day_false_positive_rate": float(zero_day_fpr),
-                "zero_day_samples": zero_day_total,
+                "zero_day_samples": int(zero_day_total),
                 
                 # Fog-ready threat metrics
                 "threat_confidence": float(avg_threat_confidence),
                 "threat_detection_quality": float(threat_detection_quality),
-                "threats_detected": len(threat_detections),
+                "threats_detected": int(len(threat_detections)),
                 
                 # Scalability metrics
-                "target_clients": target_clients,
+                "target_clients": int(target_clients),
                 "scalability_factor": float(scalability_factor),
                 "evaluation_time": float(evaluation_time),
-                "total_samples": total,
+                "total_samples": int(total),
                 
                 # Research metrics
-                "client_performance_stability": self._get_performance_stability(),
-                "data_heterogeneity_impact": self._calculate_data_heterogeneity_impact()
+                "client_performance_stability": float(self._get_performance_stability()),
+                "data_heterogeneity_impact": float(self._calculate_data_heterogeneity_impact()),
+
+                # Macro/Micro PRF (client-side, server also recomputes)
+                "macro_precision": float(macro_precision),
+                "macro_recall": float(macro_recall),
+                "macro_f1": float(macro_f1),
+                "micro_precision": float(micro_precision),
+                "micro_recall": float(micro_recall),
+                "micro_f1": float(micro_f1),
             }
+
+            # Per-class confusion counts (server expects these exact keys)
+            for cls in CLASSES:
+                metrics[f"cm_{cls}_tp"] = int(per_class_counts[cls]["tp"])
+                metrics[f"cm_{cls}_fp"] = int(per_class_counts[cls]["fp"])
+                metrics[f"cm_{cls}_fn"] = int(per_class_counts[cls]["fn"])
+                metrics[f"cm_{cls}_tn"] = int(per_class_counts[cls]["tn"])
+
+            return float(avg_loss), total, metrics
             
         except Exception as e:
             logger.error(f"❌ Client {self.client_id} evaluation failed: {e}")
@@ -446,11 +495,8 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
     def _calculate_training_stability(self, loss, accuracy, batches):
         """Calculate training stability score for research analysis"""
         try:
-            # Simple stability metric based on loss, accuracy, and successful batches
             if batches == 0:
                 return 0.0
-            
-            # Higher accuracy, lower loss, more successful batches = higher stability
             stability = (accuracy * 0.5) + (1.0 / max(loss, 0.1) * 0.3) + (min(batches / 50, 1.0) * 0.2)
             return min(1.0, stability)
         except:
@@ -459,29 +505,15 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
     def _calculate_scalability_impact(self, target_clients, accuracy, zero_day_rate):
         """
         Calculate scalability impact factor for research analysis
-        
-        Based on FL literature:
-        - More clients generally improve model generalization (McMahan et al., 2017)
-        - But increase communication overhead and heterogeneity challenges
-        - Optimal client count depends on data distribution and algorithm
         """
         try:
-            # Baseline performance (5 clients = 1.0)
             baseline_clients = 5
-            
-            # Expected scalability benefit (diminishing returns)
             if target_clients <= baseline_clients:
                 scale_benefit = 1.0
             else:
-                # Logarithmic benefit with some penalty for coordination overhead
                 scale_benefit = 1.0 + 0.1 * np.log(target_clients / baseline_clients) - 0.02 * (target_clients - baseline_clients)
-            
-            # Actual performance factor
             performance_factor = (accuracy + zero_day_rate) / 2.0
-            
-            # Scalability factor combines expected benefit with actual performance
             scalability_factor = scale_benefit * performance_factor
-            
             return min(2.0, max(0.1, scalability_factor))  # Bound between 0.1 and 2.0
         except:
             return 1.0  # Default neutral impact
@@ -490,24 +522,16 @@ class EnhancedFlowerClient(fl.client.NumPyClient):
         """Get client performance stability across rounds"""
         if len(self.threat_detection_history) < 2:
             return 1.0
-        
         detection_rates = [h['zero_day_detection_rate'] for h in self.threat_detection_history]
         return 1.0 - np.std(detection_rates) if detection_rates else 1.0
     
     def _calculate_data_heterogeneity_impact(self):
         """
         Calculate impact of data heterogeneity on client performance
-        
-        Based on your zero-day simulation:
-        - Each client missing different attack types creates non-IID conditions
-        - This tests FL algorithm robustness to data heterogeneity
         """
         try:
-            # Simple heuristic: more unique missing attacks = higher heterogeneity
-            attack_diversity = len(self.attack_types) - 1  # Exclude the one we're missing
-            heterogeneity_factor = 1.0 - (1.0 / len(self.attack_types))  # Missing 1 out of 5 = 0.8
-            
-            return heterogeneity_factor
+            # Simple heuristic: missing 1 of 5 classes
+            return 1.0 - (1.0 / len(self.attack_types))  # 0.8 for 5 classes
         except:
             return 0.8  # Default moderate heterogeneity
 
@@ -566,7 +590,7 @@ def main():
         
         # Create model with proper input size
         num_features = X_train.shape[1]
-        num_classes = 5  # Bot-IoT classes
+        num_classes = len(CLASSES)  # 5 for Bot-IoT
         
         model = Net(
             input_size=num_features, 
