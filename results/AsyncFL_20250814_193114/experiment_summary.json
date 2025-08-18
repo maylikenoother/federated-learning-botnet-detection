@@ -1,0 +1,63 @@
+{
+  "algorithm": "AsyncFL",
+  "experiment_id": "AsyncFL_20250814_193114",
+  "total_rounds": 10,
+  "total_time": 130.53321647644043,
+  "final_accuracy": 0.2104,
+  "final_loss": 0.055377617478370667,
+  "total_communication_bytes": 58781676,
+  "avg_communication_time": 11.013714456558228,
+  "final_zero_day_detection": 0.18726931159513904,
+  "avg_zero_day_detection": 0.20153963706224148,
+  "variable_client_analysis": {
+    "enabled": true,
+    "performance_by_client_count": {
+      "1": {
+        "avg_participation_rate": 0.2,
+        "avg_accuracy": 0.196,
+        "num_rounds": 1,
+        "consistency": 1.0
+      },
+      "4": {
+        "avg_participation_rate": 0.8,
+        "avg_accuracy": 0.1916,
+        "num_rounds": 1,
+        "consistency": 1.0
+      },
+      "8": {
+        "avg_participation_rate": 0.8,
+        "avg_accuracy": 0.2024,
+        "num_rounds": 1,
+        "consistency": 1.0
+      },
+      "10": {
+        "avg_participation_rate": 1.0,
+        "avg_accuracy": 0.1970666666666667,
+        "num_rounds": 3,
+        "consistency": 1.0
+      },
+      "15": {
+        "avg_participation_rate": 1.0,
+        "avg_accuracy": 0.19693333333333335,
+        "num_rounds": 2,
+        "consistency": 1.0
+      },
+      "5": {
+        "avg_participation_rate": 1.0,
+        "avg_accuracy": 0.21000000000000002,
+        "num_rounds": 2,
+        "consistency": 1.0
+      }
+    },
+    "avg_participation_rate": 0.8800000000000001,
+    "participation_stability": 0.76,
+    "client_scalability_trend": "stable_scaling",
+    "optimal_client_count": 5
+  },
+  "fog_mitigation_analysis": {
+    "enabled": true,
+    "total_threats_detected": 260,
+    "total_rules_deployed": 252,
+    "avg_response_time_ms": 0.08640248136395953,
+    "overall_effectiveness": 0.9810066417529766,
+    "real_time_capability": 

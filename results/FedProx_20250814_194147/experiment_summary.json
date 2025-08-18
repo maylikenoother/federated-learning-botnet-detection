@@ -1,0 +1,57 @@
+{
+  "algorithm": "FedProx",
+  "experiment_id": "FedProx_20250814_194147",
+  "total_rounds": 10,
+  "total_time": 135.47962546348572,
+  "final_accuracy": 0.1996,
+  "final_loss": 0.05475064590573311,
+  "total_communication_bytes": 59317896,
+  "avg_communication_time": 11.334151935577392,
+  "final_zero_day_detection": 0.1922220579826622,
+  "avg_zero_day_detection": 0.2068492048979036,
+  "variable_client_analysis": {
+    "enabled": true,
+    "performance_by_client_count": {
+      "1": {
+        "avg_participation_rate": 0.2,
+        "avg_accuracy": 0.188,
+        "num_rounds": 1,
+        "consistency": 1.0
+      },
+      "5": {
+        "avg_participation_rate": 1.0,
+        "avg_accuracy": 0.20146666666666668,
+        "num_rounds": 3,
+        "consistency": 1.0
+      },
+      "8": {
+        "avg_participation_rate": 0.8,
+        "avg_accuracy": 0.2062,
+        "num_rounds": 1,
+        "consistency": 1.0
+      },
+      "10": {
+        "avg_participation_rate": 1.0,
+        "avg_accuracy": 0.20213333333333336,
+        "num_rounds": 3,
+        "consistency": 1.0
+      },
+      "15": {
+        "avg_participation_rate": 1.0,
+        "avg_accuracy": 0.2,
+        "num_rounds": 2,
+        "consistency": 1.0
+      }
+    },
+    "avg_participation_rate": 0.9,
+    "participation_stability": 0.7591681084241542,
+    "client_scalability_trend": "stable_scaling",
+    "optimal_client_count": 8
+  },
+  "fog_mitigation_analysis": {
+    "enabled": true,
+    "total_threats_detected": 279,
+    "total_rules_deployed": 260,
+    "avg_response_time_ms": 0.08931145239783393,
+    "overall_effectiveness": 0.9286244803737629,
+    "real_time_capability": 
