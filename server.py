@@ -525,30 +525,49 @@ class ResultsTracker:
         # Fog
         fog_analysis = self._analyze_fog_mitigation_performance()
         
+        # Helper function to ensure JSON serializable types
+        def make_json_serializable(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {k: make_json_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [make_json_serializable(item) for item in obj]
+            elif isinstance(obj, bool):
+                return obj  # booleans are JSON serializable
+            elif obj is None:
+                return None
+            else:
+                return obj
+        
         summary = {
             'algorithm': self.algorithm_name,
             'experiment_id': self.experiment_id,
             'total_rounds': len(self.evaluation_history),
-            'total_time': total_time,
-            'final_accuracy': self.evaluation_history[-1]['accuracy'] if self.evaluation_history else 0,
-            'final_loss': self.evaluation_history[-1]['loss'] if self.evaluation_history else float('inf'),
+            'total_time': float(total_time),
+            'final_accuracy': float(self.evaluation_history[-1]['accuracy']) if self.evaluation_history else 0.0,
+            'final_loss': float(self.evaluation_history[-1]['loss']) if self.evaluation_history else float('inf'),
             'total_communication_bytes': int(total_bytes),
             'avg_communication_time': float(avg_comm_time),
             'final_zero_day_detection': float(final_zero_day),
             'avg_zero_day_detection': float(avg_zero_day),
-            'variable_client_analysis': client_analysis,
-            'fog_mitigation_analysis': fog_analysis,
-            'training_history': self.training_history,
-            'evaluation_history': self.evaluation_history,
-            'communication_metrics': self.communication_metrics,
-            'client_participation_history': self.client_participation_history,
-            'fog_mitigation_metrics': self.fog_mitigation_metrics,
-            # NEW: Smart objectives summary
+            'variable_client_analysis': make_json_serializable(client_analysis),
+            'fog_mitigation_analysis': make_json_serializable(fog_analysis),
+            'training_history': make_json_serializable(self.training_history),
+            'evaluation_history': make_json_serializable(self.evaluation_history),
+            'communication_metrics': make_json_serializable(self.communication_metrics),
+            'client_participation_history': make_json_serializable(self.client_participation_history),
+            'fog_mitigation_metrics': make_json_serializable(self.fog_mitigation_metrics),
+            # Smart objectives summary
             'smart_objectives_summary': {
-                'gradient_divergence_files': self.smart_tracker.gradient_csv,
-                'f1_scores_files': self.smart_tracker.f1_csv,
-                'communication_volume_files': self.smart_tracker.comm_volume_csv,
-                'convergence_analysis_files': self.smart_tracker.convergence_csv
+                'gradient_divergence_files': str(self.smart_tracker.gradient_csv),
+                'f1_scores_files': str(self.smart_tracker.f1_csv),
+                'communication_volume_files': str(self.smart_tracker.comm_volume_csv),
+                'convergence_analysis_files': str(self.smart_tracker.convergence_csv)
             }
         }
         
@@ -564,7 +583,7 @@ class ResultsTracker:
         if fog_analysis.get('enabled', False):
             logger.info(f"🌫️ Fog mitigation effectiveness: {fog_analysis.get('overall_effectiveness', 0):.1%}")
         
-        # NEW: Smart objectives summary
+        # Smart objectives summary
         logger.info(f"🎯 SMART OBJECTIVES COMPLETED:")
         logger.info(f"   A) Gradient Divergence: {self.smart_tracker.gradient_csv}")
         logger.info(f"   B) Round-by-Round F1: {self.smart_tracker.f1_csv}")
