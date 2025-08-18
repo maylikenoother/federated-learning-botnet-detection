@@ -566,7 +566,7 @@ class MultiRunFederatedLearningAnalyzer:
         return statistical_results
     
     def create_multi_run_visualizations(self, multi_run_results, statistical_results):
-        """Create comprehensive multi-run comparison visualizations"""
+        """Create comprehensive multi-run comparison visualizations with FIXED title spacing"""
         logger.info("🎨 Creating multi-run comparison visualizations...")
         
         # 1. Statistical Summary Dashboard
@@ -595,7 +595,17 @@ class MultiRunFederatedLearningAnalyzer:
         
         fig, axes = plt.subplots(2, 3, figsize=(18, 12))
         fig.suptitle('Multi-Run Statistical Analysis Dashboard\nUniversity of Lincoln - FL Algorithm Reliability Study', 
-                    fontsize=16, fontweight='bold', y=0.95)
+                    fontsize=16, fontweight='bold')
+        
+        # FIXED: Use subplots_adjust instead of tight_layout
+        plt.subplots_adjust(
+            top=0.88,      # Leave space for suptitle
+            bottom=0.08,
+            left=0.08,
+            right=0.95,
+            hspace=0.35,   # Height spacing between subplots
+            wspace=0.25    # Width spacing between subplots
+        )
         
         metrics = ['accuracy_stats', 'communication_stats', 'zero_day_stats', 
                   'convergence_stats', 'fog_response_stats']
@@ -663,7 +673,6 @@ class MultiRunFederatedLearningAnalyzer:
                 ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005,
                        f'{cv:.3f}', ha='center', va='bottom', fontweight='bold')
         
-        plt.tight_layout()
         plt.savefig(os.path.join(self.visualizations_dir, '1_statistical_summary_dashboard.png'), 
                    dpi=300, bbox_inches='tight')
         plt.close()
@@ -676,7 +685,17 @@ class MultiRunFederatedLearningAnalyzer:
         
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
         fig.suptitle('Run-to-Run Variability Analysis\nExperimental Reproducibility and Consistency', 
-                    fontsize=16, fontweight='bold', y=0.95)
+                    fontsize=16, fontweight='bold')
+        
+        # FIXED: Use subplots_adjust instead of tight_layout
+        plt.subplots_adjust(
+            top=0.88,
+            bottom=0.08,
+            left=0.08,
+            right=0.95,
+            hspace=0.3,
+            wspace=0.25
+        )
         
         # 1. Accuracy variation across runs (box plot)
         accuracy_data = []
@@ -689,7 +708,7 @@ class MultiRunFederatedLearningAnalyzer:
                 algorithm_labels.append(algorithm)
         
         if accuracy_data:
-            box_plot = ax1.boxplot(accuracy_data, labels=algorithm_labels, patch_artist=True)
+            box_plot = ax1.boxplot(accuracy_data, tick_labels=algorithm_labels, patch_artist=True)
             
             for patch, algorithm in zip(box_plot['boxes'], algorithm_labels):
                 patch.set_facecolor(self.colors[algorithm])
@@ -735,7 +754,7 @@ class MultiRunFederatedLearningAnalyzer:
                 conv_labels.append(algorithm)
         
         if conv_data:
-            box_plot = ax3.boxplot(conv_data, labels=conv_labels, patch_artist=True)
+            box_plot = ax3.boxplot(conv_data, tick_labels=conv_labels, patch_artist=True)
             
             for patch, algorithm in zip(box_plot['boxes'], conv_labels):
                 patch.set_facecolor(self.colors[algorithm])
@@ -757,19 +776,21 @@ class MultiRunFederatedLearningAnalyzer:
             for i, algorithm in enumerate(algorithms_with_data):
                 runs = list(multi_run_results[algorithm].keys())
                 for j, run_id in enumerate(runs[:max_runs]):
-                    if j == 0:  # Store run labels from first algorithm
-                        run_labels.append(f"Run {j+1}")
-                    
                     summary = multi_run_results[algorithm][run_id]['final_summary']
                     accuracy = summary.get('final_accuracy', 0) * 100
                     performance_matrix[i, j] = accuracy
+            
+            # Create run labels based on actual max_runs
+            run_labels = [f"Run {j+1}" for j in range(max_runs)]
             
             # Fill remaining slots with NaN for proper display
             performance_matrix[performance_matrix == 0] = np.nan
             
             im = ax4.imshow(performance_matrix, cmap='RdYlGn', aspect='auto', vmin=50, vmax=80)
+            
+            # FIXED: Ensure matching number of ticks and labels
             ax4.set_xticks(range(max_runs))
-            ax4.set_xticklabels(run_labels[:max_runs])
+            ax4.set_xticklabels(run_labels)
             ax4.set_yticks(range(len(algorithms_with_data)))
             ax4.set_yticklabels(algorithms_with_data)
             ax4.set_title('(d) Performance Heatmap Across Runs\n(Accuracy %)')
@@ -785,7 +806,6 @@ class MultiRunFederatedLearningAnalyzer:
             cbar = plt.colorbar(im, ax=ax4)
             cbar.set_label('Accuracy (%)', rotation=270, labelpad=15)
         
-        plt.tight_layout()
         plt.savefig(os.path.join(self.visualizations_dir, '2_variability_analysis.png'), 
                    dpi=300, bbox_inches='tight')
         plt.close()
@@ -798,7 +818,17 @@ class MultiRunFederatedLearningAnalyzer:
         
         fig, axes = plt.subplots(2, 3, figsize=(18, 12))
         fig.suptitle('Performance Distribution Analysis\nStatistical Characterization of Algorithm Performance', 
-                    fontsize=16, fontweight='bold', y=0.95)
+                    fontsize=16, fontweight='bold')
+        
+        # FIXED: Use subplots_adjust instead of tight_layout
+        plt.subplots_adjust(
+            top=0.88,
+            bottom=0.08,
+            left=0.08,
+            right=0.95,
+            hspace=0.35,
+            wspace=0.25
+        )
         
         metrics = [
             ('accuracy_values', 'Final Accuracy (%)', lambda x: x * 100),
@@ -865,7 +895,6 @@ class MultiRunFederatedLearningAnalyzer:
             table.scale(1, 2)
             ax.set_title('Multi-Run Statistics Summary', fontsize=12, fontweight='bold', pad=20)
         
-        plt.tight_layout()
         plt.savefig(os.path.join(self.visualizations_dir, '3_performance_distributions.png'), 
                    dpi=300, bbox_inches='tight')
         plt.close()
@@ -878,7 +907,17 @@ class MultiRunFederatedLearningAnalyzer:
         
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
         fig.suptitle('Convergence Patterns Across Multiple Runs\nTraining Dynamics and Stability Analysis', 
-                    fontsize=16, fontweight='bold', y=0.95)
+                    fontsize=16, fontweight='bold')
+        
+        # FIXED: Use subplots_adjust instead of tight_layout
+        plt.subplots_adjust(
+            top=0.88,
+            bottom=0.08,
+            left=0.08,
+            right=0.95,
+            hspace=0.3,
+            wspace=0.25
+        )
         
         # 1. All individual runs (thin lines) with mean (thick line)
         for algorithm in self.algorithms:
@@ -942,7 +981,7 @@ class MultiRunFederatedLearningAnalyzer:
             conv_values = list(convergence_data.values())
             conv_labels = list(convergence_data.keys())
             
-            box_plot = ax2.boxplot(conv_values, labels=conv_labels, patch_artist=True)
+            box_plot = ax2.boxplot(conv_values, tick_labels=conv_labels, patch_artist=True)
             
             for patch, algorithm in zip(box_plot['boxes'], conv_labels):
                 patch.set_facecolor(self.colors[algorithm])
@@ -1025,7 +1064,6 @@ class MultiRunFederatedLearningAnalyzer:
         ax4.legend()
         ax4.grid(True, alpha=0.3)
         
-        plt.tight_layout()
         plt.savefig(os.path.join(self.visualizations_dir, '4_convergence_patterns.png'), 
                    dpi=300, bbox_inches='tight')
         plt.close()
@@ -1038,7 +1076,17 @@ class MultiRunFederatedLearningAnalyzer:
         
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
         fig.suptitle('Communication Efficiency Multi-Run Analysis\nResource Usage and Bandwidth Optimization', 
-                    fontsize=16, fontweight='bold', y=0.95)
+                    fontsize=16, fontweight='bold')
+        
+        # FIXED: Use subplots_adjust instead of tight_layout
+        plt.subplots_adjust(
+            top=0.88,
+            bottom=0.08,
+            left=0.08,
+            right=0.95,
+            hspace=0.3,
+            wspace=0.25
+        )
         
         # 1. Communication cost distribution
         comm_data = []
@@ -1057,7 +1105,7 @@ class MultiRunFederatedLearningAnalyzer:
                     comm_labels.append(algorithm)
         
         if comm_data:
-            box_plot = ax1.boxplot(comm_data, labels=comm_labels, patch_artist=True)
+            box_plot = ax1.boxplot(comm_data, tick_labels=comm_labels, patch_artist=True)
             
             for patch, algorithm in zip(box_plot['boxes'], comm_labels):
                 patch.set_facecolor(self.colors[algorithm])
@@ -1140,7 +1188,7 @@ class MultiRunFederatedLearningAnalyzer:
                     time_labels.append(algorithm)
         
         if time_data:
-            box_plot = ax4.boxplot(time_data, labels=time_labels, patch_artist=True)
+            box_plot = ax4.boxplot(time_data, tick_labels=time_labels, patch_artist=True)
             
             for patch, algorithm in zip(box_plot['boxes'], time_labels):
                 patch.set_facecolor(self.colors[algorithm])
@@ -1150,7 +1198,6 @@ class MultiRunFederatedLearningAnalyzer:
             ax4.set_title('(d) Communication Time Distribution')
             ax4.grid(True, alpha=0.3, axis='y')
         
-        plt.tight_layout()
         plt.savefig(os.path.join(self.visualizations_dir, '5_communication_multi_run_analysis.png'), 
                    dpi=300, bbox_inches='tight')
         plt.close()
@@ -1163,7 +1210,17 @@ class MultiRunFederatedLearningAnalyzer:
         
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
         fig.suptitle('Algorithm Reliability and Consistency Analysis\nProduction Deployment Readiness Assessment', 
-                    fontsize=16, fontweight='bold', y=0.95)
+                    fontsize=16, fontweight='bold')
+        
+        # FIXED: Use subplots_adjust instead of tight_layout
+        plt.subplots_adjust(
+            top=0.88,
+            bottom=0.08,
+            left=0.08,
+            right=0.95,
+            hspace=0.3,
+            wspace=0.25
+        )
         
         # 1. Reliability scores (lower CV = more reliable)
         reliability_scores = {}
@@ -1284,7 +1341,6 @@ class MultiRunFederatedLearningAnalyzer:
             ax4.set_title('(d) Production Readiness Assessment', 
                          fontsize=12, fontweight='bold', pad=20)
         
-        plt.tight_layout()
         plt.savefig(os.path.join(self.visualizations_dir, '6_reliability_analysis.png'), 
                    dpi=300, bbox_inches='tight')
         plt.close()
@@ -1836,8 +1892,8 @@ The following multi-run analysis visualizations have been created:
             logger.info("📊 Phase 3: Performing statistical analysis...")
             statistical_results = self.perform_statistical_analysis(multi_run_results)
             
-            # Phase 4: Create multi-run visualizations
-            logger.info("🎨 Phase 4: Creating multi-run visualizations...")
+            # Phase 4: Create multi-run visualizations with FIXED title spacing
+            logger.info("🎨 Phase 4: Creating multi-run visualizations with fixed title spacing...")
             self.create_multi_run_visualizations(multi_run_results, statistical_results)
             
             # Phase 5: Generate comprehensive report
@@ -1875,13 +1931,19 @@ The following multi-run analysis visualizations have been created:
             logger.info(f"   📝 Comprehensive report: {self.analysis_dir}/multi_run_research_report.json")
             logger.info(f"   📰 Summary report: {self.analysis_dir}/multi_run_analysis_summary.md")
             
+            logger.info(f"\n🔧 TITLE OVERLAP FIX APPLIED:")
+            logger.info("   ✅ Replaced plt.tight_layout() with plt.subplots_adjust()")
+            logger.info("   ✅ Set top=0.88 to leave space for figure titles")
+            logger.info("   ✅ Increased hspace=0.3 for better subplot spacing")
+            logger.info("   ✅ All visualizations now have proper title positioning")
+            
             logger.info(f"\n🎓 READY FOR ADVANCED RESEARCH PUBLICATION!")
             logger.info("Key research outputs:")
             logger.info("1. Statistical reliability assessment of FL algorithms")
             logger.info("2. Multi-run variability analysis and implications")
             logger.info("3. Evidence-based deployment confidence metrics")
             logger.info("4. Risk assessment and mitigation strategies")
-            logger.info("5. Publication-quality statistical visualizations")
+            logger.info("5. Publication-quality statistical visualizations (TITLE OVERLAP FIXED)")
             
             return True
             
@@ -1902,6 +1964,7 @@ def main():
     print("🔬 Multi-run experimental analysis with statistical validation")
     print("📊 Generates reliability assessments and deployment confidence metrics")
     print("📈 Publication-quality statistical visualizations")
+    print("🔧 FIXED: Title overlap issues resolved with proper spacing")
     print()
     
     try:
@@ -1915,13 +1978,17 @@ def main():
             print("\n🎉 MULTI-RUN ANALYSIS COMPLETED SUCCESSFULLY!")
             print("🎓 Your statistical research analysis is ready for publication")
             print(f"📂 All results saved to: {analyzer.results_dir}")
-            print("\n📊 Generated Multi-Run Visualizations:")
+            print("\n📊 Generated Multi-Run Visualizations (Title Overlap FIXED):")
             print("   1. Statistical Summary Dashboard")
             print("   2. Run-to-Run Variability Analysis")
             print("   3. Performance Distribution Analysis")
             print("   4. Convergence Patterns Across Runs")
             print("   5. Communication Multi-Run Analysis")
             print("   6. Reliability and Consistency Assessment")
+            print("\n🔧 Title Overlap Fix Applied:")
+            print("   • Replaced plt.tight_layout() with plt.subplots_adjust()")
+            print("   • Set proper spacing parameters (top=0.88, hspace=0.3)")
+            print("   • All figure titles now display without overlapping")
             print("\n📈 Key Research Outputs:")
             print("   • Comprehensive statistical characterization")
             print("   • Reliability classification framework")
