@@ -3,117 +3,117 @@
     "title": "Multi-Run Statistical Analysis of Federated Learning Algorithms for Zero-Day Botnet Detection",
     "institution": "University of Lincoln",
     "department": "School of Computer Science",
-    "analysis_timestamp": "2025-08-19T00:38:55.917543",
+    "analysis_timestamp": "2025-08-19T21:56:21.483028",
     "algorithms_analyzed": [
       "FedAvg",
       "FedProx",
       "AsyncFL"
     ],
-    "total_experimental_runs": 9
+    "total_experimental_runs": 18
   },
   "experimental_overview": {
     "total_algorithms": 3,
     "algorithm_run_counts": {
-      "FedAvg": 3,
-      "FedProx": 3,
-      "AsyncFL": 3
+      "FedAvg": 6,
+      "FedProx": 6,
+      "AsyncFL": 6
     },
     "data_completeness": {
       "FedAvg": {
-        "complete_runs": 3,
-        "total_runs": 3,
-        "completeness_ratio": 1.0
+        "complete_runs": 0,
+        "total_runs": 6,
+        "completeness_ratio": 0.0
       },
       "FedProx": {
-        "complete_runs": 3,
-        "total_runs": 3,
-        "completeness_ratio": 1.0
+        "complete_runs": 0,
+        "total_runs": 6,
+        "completeness_ratio": 0.0
       },
       "AsyncFL": {
-        "complete_runs": 3,
-        "total_runs": 3,
-        "completeness_ratio": 1.0
+        "complete_runs": 0,
+        "total_runs": 6,
+        "completeness_ratio": 0.0
       }
     },
     "experiment_scope": "Statistical analysis of federated learning algorithm performance across multiple experimental runs"
   },
   "statistical_analysis": {
     "FedAvg": {
-      "sample_size": 3,
+      "sample_size": 6,
       "performance_statistics": {
         "accuracy": {
-          "mean_percentage": 69.73824989945528,
-          "std_percentage": 2.438871500848022,
+          "mean_percentage": 0.0,
+          "std_percentage": 0.0,
           "confidence_interval_95": {
-            "lower": 62.31814207437316,
-            "upper": 77.15835772453741
+            "lower": NaN,
+            "upper": NaN
           },
-          "coefficient_of_variation": 0.03497179100944246
+          "coefficient_of_variation": 0
         },
         "communication_efficiency": {
-          "mean_mb": 2.33708922068278,
-          "std_mb": 0.054100143727972526,
-          "efficiency_score": 298.3978929100588
+          "mean_mb": 0.0,
+          "std_mb": 0.0,
+          "efficiency_score": 0
         },
         "zero_day_detection": {
-          "mean_percentage": 83.07182457403052,
-          "std_percentage": 1.7475239255048423,
+          "mean_percentage": 0.0,
+          "std_percentage": 0.0,
           "reliability_assessment": "High"
         }
       },
       "convergence_characteristics": {
-        "mean_rounds_to_target": 9.333333333333334,
-        "convergence_consistency": 0.9082526295194675
+        "mean_rounds_to_target": 10.0,
+        "convergence_consistency": 1.0
       }
     },
     "FedProx": {
-      "sample_size": 3,
+      "sample_size": 6,
       "performance_statistics": {
         "accuracy": {
-          "mean_percentage": 68.20868742459146,
-          "std_percentage": 1.8291536256360146,
+          "mean_percentage": 0.0,
+          "std_percentage": 0.0,
           "confidence_interval_95": {
-            "lower": 62.643606555779876,
-            "upper": 73.77376829340305
+            "lower": NaN,
+            "upper": NaN
           },
-          "coefficient_of_variation": 0.026817018398986883
+          "coefficient_of_variation": 0
         },
         "communication_efficiency": {
-          "mean_mb": 1.9650386174519856,
-          "std_mb": 0.04328008643927291,
-          "efficiency_score": 347.11118050715913
+          "mean_mb": 0.0,
+          "std_mb": 0.0,
+          "efficiency_score": 0
         },
         "zero_day_detection": {
-          "mean_percentage": 90.71454971602036,
-          "std_percentage": 1.165015950336567,
+          "mean_percentage": 0.0,
+          "std_percentage": 0.0,
           "reliability_assessment": "High"
         }
       },
       "convergence_characteristics": {
-        "mean_rounds_to_target": 8.333333333333334,
-        "convergence_consistency": 0.8698176191991023
+        "mean_rounds_to_target": 10.0,
+        "convergence_consistency": 1.0
       }
     },
     "AsyncFL": {
-      "sample_size": 3,
+      "sample_size": 6,
       "performance_statistics": {
         "accuracy": {
-          "mean_percentage": 59.0678123743191,
-          "std_percentage": 3.048589376060022,
+          "mean_percentage": 0.0,
+          "std_percentage": 0.0,
           "confidence_interval_95": {
-            "lower": 49.792677592966456,
-            "upper": 68.34294715567172
+            "lower": NaN,
+            "upper": NaN
           },
-          "coefficient_of_variation": 0.051611685849152204
+          "coefficient_of_variation": 0
         },
         "communication_efficiency": {
-          "mean_mb": 1.7695941925048828,
-          "std_mb": 0.04869004372721384,
-          "efficiency_score": 333.79298273299526
+          "mean_mb": 0.0,
+          "std_mb": 0.0,
+          "efficiency_score": 0
         },
         "zero_day_detection": {
-          "mean_percentage": 86.39318714502544,
-          "std_percentage": 1.4562699379207047,
+          "mean_percentage": 0.0,
+          "std_percentage": 0.0,
           "reliability_assessment": "High"
         }
       },
@@ -128,149 +128,5 @@
       "reliability_class": "Highly Reliable",
       "deployment_recommendation": "Recommended for production deployment",
       "key_metrics": {
-        "coefficient_of_variation": 0.03497179100944246,
-        "performance_range_percent": 5.486674326820562,
-        "sample_size": 3
-      },
-      "risk_factors": [
-        "Limited sample size for statistical confidence"
-      ],
-      "mitigation_strategies": [
-        "Consider implementing learning rate decay",
-        "Add momentum to gradient updates",
-        "Validate client selection strategies"
-      ]
-    },
-    "FedProx": {
-      "reliability_class": "Highly Reliable",
-      "deployment_recommendation": "Recommended for production deployment",
-      "key_metrics": {
-        "coefficient_of_variation": 0.026817018398986883,
-        "performance_range_percent": 4.115005745115418,
-        "sample_size": 3
-      },
-      "risk_factors": [
-        "Limited sample size for statistical confidence"
-      ],
-      "mitigation_strategies": [
-        "Fine-tune proximal term coefficient (\u03bc)",
-        "Optimize client sampling strategy",
-        "Implement adaptive \u03bc selection"
-      ]
-    },
-    "AsyncFL": {
-      "reliability_class": "Reliable",
-      "deployment_recommendation": "Suitable for production with monitoring",
-      "key_metrics": {
-        "coefficient_of_variation": 0.051611685849152204,
-        "performance_range_percent": 6.858342908525694,
-        "sample_size": 3
-      },
-      "risk_factors": [
-        "Limited sample size for statistical confidence"
-      ],
-      "mitigation_strategies": [
-        "Optimize staleness handling mechanisms",
-        "Implement bounded staleness controls",
-        "Validate asynchronous aggregation timing"
-      ]
-    }
-  },
-  "variability_analysis": {
-    "overall_findings": {
-      "most_consistent_algorithm": "FedProx",
-      "highest_variability_algorithm": "AsyncFL",
-      "variability_implications": []
-    },
-    "algorithm_variability": {
-      "FedAvg": {
-        "variability_level": "Low",
-        "implications_for_deployment": "Highly predictable performance - safe for immediate deployment",
-        "recommended_sample_size": "Minimum 3 runs sufficient for validation",
-        "confidence_in_results": "Medium"
-      },
-      "FedProx": {
-        "variability_level": "Low",
-        "implications_for_deployment": "Highly predictable performance - safe for immediate deployment",
-        "recommended_sample_size": "Minimum 3 runs sufficient for validation",
-        "confidence_in_results": "Medium"
-      },
-      "AsyncFL": {
-        "variability_level": "Medium",
-        "implications_for_deployment": "Stable performance - suitable for production with standard monitoring",
-        "recommended_sample_size": "Recommend 5-7 runs for reliable estimates",
-        "confidence_in_results": "Medium"
-      }
-    }
-  },
-  "deployment_confidence": {
-    "overall_assessment": {
-      "high_confidence_algorithms": [],
-      "medium_confidence_algorithms": [
-        "FedAvg",
-        "FedProx",
-        "AsyncFL"
-      ],
-      "low_confidence_algorithms": [],
-      "deployment_readiness": false
-    },
-    "algorithm_confidence": {
-      "FedAvg": {
-        "confidence_score": 0.5797259453948982,
-        "confidence_level": "Low",
-        "key_factors": {
-          "performance_consistency": 0.966209908991497,
-          "sample_adequacy": 0.6,
-          "statistical_power": "Limited"
-        }
-      },
-      "FedProx": {
-        "confidence_score": 0.5843300113349504,
-        "confidence_level": "Low",
-        "key_factors": {
-          "performance_consistency": 0.9738833522249174,
-          "sample_adequacy": 0.6,
-          "statistical_power": "Limited"
-        }
-      },
-      "AsyncFL": {
-        "confidence_score": 0.5705528077272304,
-        "confidence_level": "Low",
-        "key_factors": {
-          "performance_consistency": 0.9509213462120507,
-          "sample_adequacy": 0.6,
-          "statistical_power": "Limited"
-        }
-      }
-    },
-    "risk_mitigation": {}
-  },
-  "research_contributions": {
-    "methodological_contributions": [
-      "Comprehensive statistical framework for FL algorithm evaluation",
-      "Multi-run variability analysis methodology for cybersecurity applications",
-      "Reliability assessment framework for production FL deployment",
-      "Confidence interval estimation for FL performance metrics"
-    ],
-    "empirical_contributions": [
-      "Statistical characterization of FL algorithm performance variability",
-      "Quantitative reliability assessment for IoT cybersecurity applications",
-      "Deployment confidence metrics based on experimental reproducibility",
-      "Risk factor identification for production FL systems"
-    ],
-    "practical_contributions": [
-      "Evidence-based deployment recommendations with confidence levels",
-      "Risk mitigation strategies for variable algorithm performance",
-      "Sample size recommendations for FL algorithm validation",
-      "Production readiness assessment framework"
-    ]
-  },
-  "visualizations_generated": [
-    "1_statistical_summary_dashboard.png",
-    "2_variability_analysis.png",
-    "3_performance_distributions.png",
-    "4_convergence_patterns.png",
-    "5_communication_multi_run_analysis.png",
-    "6_reliability_analysis.png"
-  ]
-}
+        "coefficient_of_variation": 0,
+        "performance_range_percent": 
