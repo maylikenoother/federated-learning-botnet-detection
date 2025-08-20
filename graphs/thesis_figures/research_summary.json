@@ -1,0 +1,104 @@
+{
+  "metadata": {
+    "title": "FL Algorithm Performance Analysis",
+    "institution": "University of Lincoln",
+    "department": "School of Computer Science",
+    "generated_date": "2025-08-20T19:05:07.641879",
+    "algorithms_analyzed": [
+      "FedAvg",
+      "FedProx",
+      "AsyncFL"
+    ]
+  },
+  "summary_metrics": {
+    "FedAvg": {
+      "algorithm": "FedAvg",
+      "final_accuracy": 0.1994936708860759,
+      "average_accuracy": 0.20039984412844694,
+      "best_accuracy": 0.2155555555555555,
+      "accuracy_std": 0.00611167833627678,
+      "total_communication_mb": 165.2334156036377,
+      "avg_communication_time": 10.332958475748699,
+      "communication_efficiency": 0.0012073445928432647,
+      "zero_day_detection_rate": 0.2002000185228435,
+      "convergence_rounds": 30,
+      "training_stability": 0.9704051460987084,
+      "fog_response_time": 0.1662714765418011,
+      "fog_effectiveness": 0.8370629540793935
+    },
+    "FedProx": {
+      "algorithm": "FedProx",
+      "final_accuracy": 0.188,
+      "average_accuracy": 0.1980380381141051,
+      "best_accuracy": 0.22,
+      "accuracy_std": 0.006987618825749007,
+      "total_communication_mb": 166.66766929626465,
+      "avg_communication_time": 10.091440145174662,
+      "communication_efficiency": 0.0011279932142437025,
+      "zero_day_detection_rate": 0.2053358115015237,
+      "convergence_rounds": 30,
+      "training_stability": 0.9659183200286057,
+      "fog_response_time": 0.08139034323775561,
+      "fog_effectiveness": 0.8968622468497026
+    },
+    "AsyncFL": {
+      "algorithm": "AsyncFL",
+      "final_accuracy": 0.2051612903225806,
+      "average_accuracy": 0.20086386848827967,
+      "best_accuracy": 0.22,
+      "accuracy_std": 0.005282700529651775,
+      "total_communication_mb": 166.06514167785645,
+      "avg_communication_time": 9.998111883799234,
+      "communication_efficiency": 0.0012354265816998807,
+      "zero_day_detection_rate": 0.21513425581349357,
+      "convergence_rounds": 30,
+      "training_stability": 0.974374055533312,
+      "fog_response_time": 0.07974203429803858,
+      "fog_effectiveness": 0.9337517434885496
+    }
+  },
+  "rankings": {
+    "accuracy": [
+      [
+        "AsyncFL",
+        0.2051612903225806
+      ],
+      [
+        "FedAvg",
+        0.1994936708860759
+      ],
+      [
+        "FedProx",
+        0.188
+      ]
+    ],
+    "communication_efficiency": [
+      [
+        "AsyncFL",
+        0.0012354265816998807
+      ],
+      [
+        "FedAvg",
+        0.0012073445928432647
+      ],
+      [
+        "FedProx",
+        0.0011279932142437025
+      ]
+    ],
+    "convergence_speed": [
+      [
+        "FedAvg",
+        30
+      ],
+      [
+        "FedProx",
+        30
+      ],
+      [
+        "AsyncFL",
+        30
+      ]
+    ]
+  }
+}
